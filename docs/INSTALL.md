@@ -17,22 +17,42 @@ termasuk menulis home user umum lalu `chown`.
 
 ## 1. Partisi, format, mount (live ISO)
 
-> ⚠️ `sfdisk` di bawah **menghapus seluruh isi disk**. Cek nama disk dulu.
+> ⚠️ Langkah ini **menghapus seluruh isi disk**. Cek nama disk dulu.
 
+**1. Cek disk** — cocokkan dari ukurannya, jangan asumsi dari nama:
 ```
 lsblk
-DISK=/dev/nvme0n1          # VM virtio: /dev/vda
-P=p                        # NVMe pakai akhiran "p" (nvme0n1p1); virtio/SATA: P=
 ```
+Contoh di bawah memakai `nvme0n1` (PC). Untuk VM virtio, ganti
+`nvme0n1` → `vda`, `nvme0n1p1` → `vda1`, `nvme0n1p2` → `vda2`.
+
+**2. Partisi:**
 ```
-printf 'label: gpt\n,512M,U\n,,L\n' | sfdisk $DISK
-mkfs.fat -F 32 ${DISK}${P}1
-mkfs.ext4 ${DISK}${P}2
-mount ${DISK}${P}2 /mnt
+cfdisk /dev/nvme0n1
+```
+Pilih `gpt` → **New** `512M` → **Type** `EFI System` → **New** (sisa disk)
+→ **Type** `Linux filesystem` → **Write** → ketik `yes` → **Quit**.
+
+**3. Format:**
+```
+mkfs.fat -F 32 /dev/nvme0n1p1
+mkfs.ext4 /dev/nvme0n1p2
+```
+
+**4. Mount** — ESP ke `/mnt/boot` (bukan `/mnt/boot/efi`):
+```
+mount /dev/nvme0n1p2 /mnt
 mkdir -p /mnt/boot
-mount ${DISK}${P}1 /mnt/boot
+mount /dev/nvme0n1p1 /mnt/boot
 ```
-ESP di-mount ke **`/boot`** (kernel + initramfs langsung di ESP untuk EFISTUB).
+
+**5. Cek WAJIB sebelum basestrap:**
+```
+lsblk -f
+```
+Harus terlihat `nvme0n1p1` **vfat** di `/mnt/boot` dan `nvme0n1p2` **ext4**
+di `/mnt`. Kalau `/mnt/boot` tidak muncul, kernel akan terpasang ke
+partisi root dan bootstrap menolak jalan (`/boot bukan partisi EFI`).
 
 ## 2. Basestrap
 
