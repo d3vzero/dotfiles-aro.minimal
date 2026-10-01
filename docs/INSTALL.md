@@ -114,5 +114,5 @@ ISO, mount seperti langkah 1, `artix-chroot /mnt`, lalu:
 efibootmgr        # cek entry "Artix" masih ada atau tidak
 bash /opt/dotfiles-aro.minimal/bootstrap/install-chroot.sh
 ```
-Bootstrap aman diulang: entry yang sudah ada tidak dibuat dobel.
+Bootstrap aman diulang: entry lama berlabel sama dihapus lalu dibuat ulang.
 Cadangan jangka panjang: bootloader `limine` (repo resmi).

@@ -89,12 +89,14 @@ CMDLINE="root=UUID=$ROOT_UUID rw ${INITRD}initrd=\\initramfs-linux.img quiet"
 echo "    disk=$ESP_DISK part=$ESP_PART"
 echo "    cmdline: $CMDLINE"
 
-if efibootmgr | grep -qE "^Boot[0-9A-Fa-f]{4}\*? ${EFI_LABEL}([[:space:]]|$)"; then
-    warn "Entry EFI '$EFI_LABEL' sudah ada -- tidak dibuat ulang (hapus dulu dengan efibootmgr -b XXXX -B kalau mau diganti)"
-else
-    efibootmgr --create --disk "$ESP_DISK" --part "$ESP_PART" --label "$EFI_LABEL" \
-        --loader /vmlinuz-linux --unicode "$CMDLINE"
-fi
+# Entry lama berlabel sama dihapus dulu: setelah partisi ulang, GUID partisi
+# berubah, jadi entry lama menunjuk ke partisi yang sudah tidak ada.
+for num in $(efibootmgr | sed -nE "s/^Boot([0-9A-Fa-f]{4})\*? ${EFI_LABEL}([[:space:]].*)?$/\1/p"); do
+    echo "    hapus entry lama Boot$num ($EFI_LABEL)"
+    efibootmgr -q -b "$num" -B
+done
+efibootmgr --create --disk "$ESP_DISK" --part "$ESP_PART" --label "$EFI_LABEL" \
+    --loader /vmlinuz-linux --unicode "$CMDLINE"
 
 echo
 echo "==> SELESAI bootstrap."
