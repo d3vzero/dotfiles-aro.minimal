@@ -99,7 +99,7 @@ random_action() {
     elif (( r < 75 )); then do_act group "$d"
     elif (( r < 77 )); then do_act ungroup
     elif (( r < 80 )); then do_act tab "$([ $((RANDOM%2)) = 0 ] && echo next || echo prev)"
-    elif (( r < 83 )); then do_act switch next
+    elif (( r < 83 )); then do_act focus "$d"
     elif (( r < 85 )); then do_act overview; sleep 1; do_act overview
     elif (( r < 87 )); then do_act scratchpad
     elif (( r < 89 )); then do_act scratchpad_show

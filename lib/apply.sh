@@ -22,7 +22,8 @@ load_conf() {
     # shellcheck disable=SC1090
     . "$1"
     PUBLIC_HOME="/home/$PUBLIC_USER"
-    export REPO_DIR PUBLIC_USER PUBLIC_HOME ADMIN_USER IS_VM
+    SUNG_REV="${SUNG_REV:-4918f76}"
+    export REPO_DIR PUBLIC_USER PUBLIC_HOME ADMIN_USER IS_VM SUNG_REV
 }
 
 has_profile() { [[ " $PROFILES " == *" $1 "* ]]; }
@@ -184,6 +185,13 @@ setup_public_home() {
            -e 's/spawn, foot$/spawn, kitty/' \
            -e '/^bind = mod+w, wallpapers/d' "$AC"
     { echo; cat "$T/config/aro/overrides.conf"; } >> "$AC"
+    # Tambahan aro per profil (profiles/<p>/aro.conf), hanya profil yang aktif
+    local pr
+    for pr in $PROFILES; do
+        if [ -f "$REPO_DIR/profiles/$pr/aro.conf" ]; then
+            { echo; cat "$REPO_DIR/profiles/$pr/aro.conf"; } >> "$AC"
+        fi
+    done
     if ! grep -q '^bar = false' "$AC";       then warn "aro: 'bar = false' tidak ter-set (config.example berubah?)"; fi
     if ! grep -q '^wallpaper = none' "$AC";  then warn "aro: 'wallpaper = none' tidak ter-set (config.example berubah?)"; fi
     if ! grep -q 'spawn, kitty$' "$AC";      then warn "aro: terminal default belum diganti ke kitty (config.example berubah?)"; fi

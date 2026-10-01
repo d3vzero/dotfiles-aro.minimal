@@ -12,7 +12,7 @@ minimal, tanpa AUR. Dari disk kosong sampai desktop jadi dalam 1 repo.
 - `update.sh` — terapkan ulang di sistem yang jalan (`sudo`)
 - `lib/apply.sh` — fungsi bersama kedua script
 - `core/` — paket, script, dan template home user umum
-- `profiles/daily/` — Steam, OBS, Proton-GE
+- `profiles/daily/` — Steam, OBS, Proton-GE, Sung (pemutar musik)
 - `profiles/work/` — FreeCAD, KiCad, OnlyOffice
 - `profiles/ai/` — llama.cpp (Vulkan)
 - `tools/` — alat uji (stress test aro)

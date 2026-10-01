@@ -5,6 +5,7 @@
 #   UPDATE_ARO=1         rebuild aro dari source
 #   UPDATE_ONLYOFFICE=1  download ulang OnlyOffice AppImage (profil work)
 #   UPDATE_PROTONGE=1    download Proton-GE terbaru (profil daily)
+#   UPDATE_SUNG=1        build ulang Sung dari SUNG_REV (profil daily)
 #   UPDATE_LLAMA=1       pull + rebuild llama.cpp (profil ai)
 # Contoh: sudo UPDATE_ARO=1 UPDATE_ONLYOFFICE=1 /opt/dotfiles-aro.minimal/update.sh
 set -euo pipefail

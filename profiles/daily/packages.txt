@@ -1,5 +1,21 @@
-# daily -- gaming + rekam (butuh [multilib], diaktifkan otomatis)
+# daily -- gaming + rekam + musik (Steam butuh [multilib], diaktifkan otomatis)
 steam
 lib32-mesa
 lib32-vulkan-radeon
 obs-studio
+
+# Sung (pemutar YouTube Music / file lokal / Navidrome) -- build per-user
+python
+cmake
+ffmpeg
+qt6-base
+qt6-declarative
+qt6-multimedia
+qt6-multimedia-ffmpeg   # provider eksplisit: hindari prompt qt6-multimedia-backend
+qt6-svg
+qt6-wayland
+qt6-imageformats
+nodejs                  # runtime JS untuk yt-dlp
+libsecret               # simpan login server di keyring
+libpulse                # pactl: pause saat output audio hilang
+libnotify               # notify-send untuk sung-yt

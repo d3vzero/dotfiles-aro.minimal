@@ -92,6 +92,7 @@ Tambahan dari repo ini:
 | `Ctrl+Alt+Del` | Menu Shutdown / Reboot |
 | `Super+e` | File manager (superfile) |
 | `Super+n` | Atur jaringan (nmtui) |
+| `Super+Shift+u` | *(profil daily)* Update yt-dlp untuk Sung (`sung-yt update`) |
 
 ## 5. Admin & update
 
@@ -105,7 +106,8 @@ Opsi (gabungkan seperlunya):
 sudo UPDATE_ARO=1 UPDATE_ONLYOFFICE=1 /opt/dotfiles-aro.minimal/update.sh
 ```
 `UPDATE_ARO` rebuild aro · `UPDATE_ONLYOFFICE` download ulang AppImage ·
-`UPDATE_PROTONGE` Proton-GE terbaru · `UPDATE_LLAMA` pull + rebuild llama.cpp.
+`UPDATE_PROTONGE` Proton-GE terbaru · `UPDATE_SUNG` build ulang Sung ·
+`UPDATE_LLAMA` pull + rebuild llama.cpp.
 
 Ganti profil: edit `PROFILES` di `/etc/dotfiles-aro.minimal.conf`, lalu jalankan
 `update.sh`. (Profil yang dihapus tidak meng-uninstall paket.)
@@ -120,8 +122,17 @@ Ganti profil: edit `PROFILES` di `/etc/dotfiles-aro.minimal.conf`, lalu jalankan
   `/opt/onlyoffice`, tidak lewat AUR). Printer tidak dipasang: pakai
   *Export/Print to PDF*.
 - **daily** — Steam, OBS, Proton-GE system-wide
-  (`/usr/share/steam/compatibilitytools.d`). Mengaktifkan `[multilib]` +
-  `[core]` Arch otomatis. DaVinci Resolve **tidak** termasuk (butuh AUR).
+  (`/usr/share/steam/compatibilitytools.d`), dan **Sung** (pemutar YouTube
+  Music / file lokal / Navidrome). Mengaktifkan `[multilib]` + `[core]`
+  Arch otomatis. DaVinci Resolve **tidak** termasuk (butuh AUR).
+  - Sung di-build **per-user** di home `Assy` (`~/.local/bin/sung`, venv
+    Python milik `Assy`), dikunci ke commit `SUNG_REV` yang sudah dites.
+  - `sung-yt` mengecek YouTube 60 detik setelah login lalu tiap 6 jam,
+    dan memberi notifikasi **hanya saat status berubah** (rusak / pulih).
+    Kalau rusak: `Super+Shift+u` (update yt-dlp + rollback otomatis kalau
+    tetap gagal). `Assy` bisa melakukannya sendiri tanpa sudo.
+  - `UPDATE_SUNG=1` atau mengganti `SUNG_REV` mengembalikan yt-dlp ke versi
+    terkunci; script langsung menjalankan `sung-yt update` sesudahnya.
 - **ai** — llama.cpp dengan backend **Vulkan** (jalan di GPU AMD lewat
   `vulkan-radeon`, tanpa ROCm). Binary: `llama-server`, `llama-cli`.
   Model GGUF download manual ke `/srv/models/`.

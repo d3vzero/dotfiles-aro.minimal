@@ -1,0 +1,171 @@
+#!/bin/bash
+# sung-yt — cek kesehatan YouTube di Sung, notifikasi kalau rusak, update yt-dlp
+#
+#   sung-yt check    tes sekali; notifikasi hanya saat status berubah (rusak / pulih)
+#   sung-yt watch    cek saat login lalu tiap 6 jam (dipanggil dari `exec =` aro)
+#   sung-yt update   upgrade yt-dlp di venv Sung, tes ulang, rollback kalau gagal
+#   sung-yt status   versi terpasang, versi terbaru, hasil cek terakhir
+#
+# Tes memakai helper Sung sendiri (catalog.py), jadi yang diuji persis jalur
+# yang dipakai Sung saat memutar lagu: ytmusicapi untuk cari, yt-dlp untuk audio.
+# Butuh: curl, libnotify (notify-send), flock (util-linux).
+
+PREFIX="${SUNG_PREFIX:-$HOME/.local}"
+PY="$PREFIX/lib/sung/runtime/bin/python"
+HELPER="$PREFIX/lib/sung/catalog.py"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/sung-yt"
+STATE="$STATE_DIR/status"          # ok | broken-ytdlp | broken-search
+LOG="$STATE_DIR/log"
+INTERVAL="${SUNG_YT_INTERVAL:-21600}"   # 6 jam
+# dua video berbeda: dianggap rusak hanya kalau KEDUANYA gagal
+TEST_IDS=(jNQXAC9IVRw dQw4w9WgXcQ)
+
+mkdir -p "$STATE_DIR"
+log()    { echo "$(date '+%F %T') $*" >> "$LOG"; }
+notify() { command -v notify-send >/dev/null && notify-send -a Sung "$@"; }
+die()    { echo "!! $*" >&2; exit 1; }
+
+[ -x "$PY" ] && [ -f "$HELPER" ] || die "Sung tidak ditemukan di $PREFIX (venv atau catalog.py hilang)"
+
+# versi dari metadata pip (format PyPI, mis. 2026.8.19), bukan yt_dlp.version (2026.08.19)
+ver_installed() { "$PY" -c 'from importlib.metadata import version; print(version("yt-dlp"))' 2>/dev/null; }
+ver_latest()    { curl -fsS --max-time 10 https://pypi.org/pypi/yt-dlp/json 2>/dev/null |
+                  "$PY" -c 'import json,sys; print(json.load(sys.stdin)["info"]["version"])' 2>/dev/null; }
+online()        { curl -fsS --max-time 10 -o /dev/null https://music.youtube.com/ ; }
+
+# panggil helper Sung; cetak pesan error kalau gagal
+helper() {
+    local out
+    out=$(printf '%s' "$1" | timeout 90 "$PY" "$HELPER" 2>/dev/null)
+    if printf '%s' "$out" | "$PY" -c 'import json,sys; sys.exit(0 if json.load(sys.stdin).get("ok") else 1)' 2>/dev/null; then
+        return 0
+    fi
+    printf '%s' "$out" | "$PY" -c 'import json,sys
+try: print(json.load(sys.stdin).get("error","")[-300:])
+except Exception: print("helper tidak mengembalikan data")' 2>/dev/null
+    return 1
+}
+
+test_resolve() {
+    local id err
+    for id in "${TEST_IDS[@]}"; do
+        if err=$(helper "{\"op\":\"resolve\",\"id\":\"$id\",\"quality\":\"standard\"}"); then
+            return 0
+        fi
+        log "resolve $id gagal: $err"
+        LAST_ERR=$err
+    done
+    return 1
+}
+
+test_search() {
+    local err
+    if err=$(helper '{"op":"search","query":"daft punk","limit":3}'); then return 0; fi
+    log "search gagal: $err"
+    LAST_ERR=$err
+    return 1
+}
+
+# 0 = sehat, 1 = yt-dlp rusak, 2 = pencarian (ytmusicapi) rusak, 3 = offline
+run_tests() {
+    LAST_ERR=""
+    online || return 3
+    test_search  || return 2
+    test_resolve || return 1
+    return 0
+}
+
+cmd_check() {
+    exec 9>"$STATE_DIR/lock"; flock -n 9 || exit 0
+    local prev now rc
+    prev=$(cat "$STATE" 2>/dev/null || echo ok)
+    run_tests; rc=$?
+    case $rc in
+        3) log "offline, cek dilewati"; return 0 ;;
+        0) now=ok ;;
+        1) now=broken-ytdlp ;;
+        2) now=broken-search ;;
+    esac
+    echo "$now" > "$STATE"
+    log "cek: $now (yt-dlp $(ver_installed))"
+
+    [ "$now" = "$prev" ] && return 0          # notifikasi hanya saat berubah
+    case $now in
+        ok)
+            notify "Sung: YouTube pulih" "Pemutaran YouTube kembali normal." ;;
+        broken-ytdlp)
+            local latest inst; inst=$(ver_installed); latest=$(ver_latest)
+            if [ -n "$latest" ] && [ "$latest" != "$inst" ]; then
+                notify -u critical "Sung: YouTube tidak bisa diputar" \
+                  "yt-dlp $inst rusak, versi $latest tersedia."$'\n'"Jalankan: sung-yt update"
+            else
+                notify -u critical "Sung: YouTube tidak bisa diputar" \
+                  "yt-dlp $inst rusak dan belum ada versi baru."$'\n'"Coba lagi nanti: sung-yt update"
+            fi ;;
+        broken-search)
+            notify -u critical "Sung: pencarian YouTube Music rusak" \
+              "Masalah di ytmusicapi, bukan yt-dlp. Tunggu update Sung." ;;
+    esac
+}
+
+cmd_update() {
+    exec 9>"$STATE_DIR/lock"; flock 9
+    local old new latest rc
+    old=$(ver_installed); latest=$(ver_latest)
+    echo "yt-dlp terpasang: ${old:-?}   terbaru di PyPI: ${latest:-tidak bisa dicek}"
+    if [ -n "$latest" ] && [ "$latest" = "$old" ] && [ "${1:-}" != "--force" ]; then
+        echo "Sudah versi terbaru. (paksa reinstall: sung-yt update --force)"
+        return 0
+    fi
+
+    echo "==> Upgrade yt-dlp di venv Sung"
+    "$PY" -m pip install --disable-pip-version-check -q -U "yt-dlp[default]" || die "pip gagal"
+    new=$(ver_installed)
+    log "update yt-dlp $old -> $new"
+
+    echo "==> Tes dengan helper Sung"
+    run_tests; rc=$?
+    case $rc in
+        0) echo "OK: YouTube jalan dengan yt-dlp $new"
+           echo ok > "$STATE"
+           notify "Sung: yt-dlp diperbarui" "$old → $new, YouTube jalan normal." ;;
+        3) echo "Offline, tes dilewati. Versi baru tetap dipasang: $new" ;;
+        2) echo "yt-dlp $new terpasang, tapi pencarian (ytmusicapi) masih rusak: $LAST_ERR"
+           echo broken-search > "$STATE" ;;
+        1) echo "Masih rusak dengan $new: $LAST_ERR"
+           if [ -n "$old" ] && [ "$old" != "$new" ]; then
+               echo "==> Rollback ke $old"
+               "$PY" -m pip install --disable-pip-version-check -q "yt-dlp[default]==$old"
+               log "rollback yt-dlp ke $old"
+           fi
+           echo broken-ytdlp > "$STATE"
+           notify -u critical "Sung: update tidak memperbaiki" \
+             "yt-dlp $new juga gagal, dikembalikan ke $old."$'\n'"Tunggu rilis yt-dlp berikutnya." ;;
+    esac
+    echo "Sung tidak perlu di-restart: helper dijalankan ulang tiap permintaan."
+}
+
+cmd_status() {
+    echo "Sung prefix     : $PREFIX"
+    echo "yt-dlp terpasang: $(ver_installed)"
+    echo "yt-dlp terbaru  : $(ver_latest || echo '?')"
+    echo "Status terakhir : $(cat "$STATE" 2>/dev/null || echo 'belum pernah dicek')"
+    echo "Log             : $LOG"
+    tail -n 5 "$LOG" 2>/dev/null
+}
+
+cmd_watch() {
+    sleep 60    # beri waktu jaringan & mako siap setelah login
+    while true; do
+        "$0" check      # proses terpisah: lock dilepas setelah tiap cek
+        sleep "$INTERVAL"
+    done
+}
+
+case "${1:-}" in
+    check)  cmd_check ;;
+    update) shift; cmd_update "$@" ;;
+    status) cmd_status ;;
+    watch)  cmd_watch ;;
+    *) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac
