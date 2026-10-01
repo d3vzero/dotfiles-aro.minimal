@@ -1,0 +1,12 @@
+#!/bin/sh
+# hide-app nama1 nama2 ...  (nama file .desktop tanpa ekstensi)
+# Sembunyikan entry dari fuzzel untuk user ini saja, tanpa root.
+dir="$HOME/.local/share/applications"
+mkdir -p "$dir"
+for n in "$@"; do
+  src="/usr/share/applications/$n.desktop"
+  [ -f "$src" ] || { echo "tidak ada: $n"; continue; }
+  cp "$src" "$dir/"
+  sed -i '/^NoDisplay=/d; /^\[Desktop Entry\]/a NoDisplay=true' "$dir/$n.desktop"
+  echo "disembunyikan: $n"
+done

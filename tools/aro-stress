@@ -1,0 +1,240 @@
+#!/bin/bash
+# aro-stress — uji ketahanan compositor aro lewat aroctl (tanpa paket tambahan)
+#
+# Pakai (dari kitty, sebagai user yang login di aro):
+#   setsid -f ~/.local/bin/aro-stress 8 >/dev/null 2>&1     # 8 jam, jalan di latar
+# Pantau:   tail -f ~/aro-stress/latest/actions.log
+# Berhenti: touch ~/aro-stress/STOP
+#
+# File uji opsional (path TANPA spasi), set sebelum menjalankan, contoh:
+#   FREECAD_FILE=~/uji/part.FCStd KICAD_FILE=~/uji/board.kicad_pro \
+#   PDF_FILE=~/uji/doc.pdf OFFICE_FILE=~/uji/lap.docx \
+#   setsid -f ~/.local/bin/aro-stress 8 >/dev/null 2>&1
+
+HOURS=${1:-8}
+MAXWIN=${MAXWIN:-10}            # batas jumlah window sebelum mulai menutup
+FREECAD_FILE=${FREECAD_FILE:-}
+KICAD_FILE=${KICAD_FILE:-}
+PDF_FILE=${PDF_FILE:-}
+OFFICE_FILE=${OFFICE_FILE:-}
+OFFICE_BIN=/opt/onlyoffice/OnlyOffice.AppImage
+
+BASE="$HOME/aro-stress"
+RUN="$BASE/$(date +%Y%m%d-%H%M%S)"
+ACT="$RUN/actions.log"
+MET="$RUN/metrics.csv"
+EVT="$RUN/events.log"
+SUM="$RUN/summary.txt"
+LOGDIR="${XDG_STATE_HOME:-$HOME/.local/state}/aro"
+RT="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+UIDN=$(id -u)
+
+mkdir -p "$RUN/crash" "$RUN/hang"
+ln -sfn "$RUN" "$BASE/latest"
+rm -f "$BASE/STOP"
+
+# ── helper ────────────────────────────────────────────────────────────────
+log()    { echo "$(date +%F_%T) $*" >> "$ACT"; }
+sock()   { ls -t "$RT"/aro-*.sock 2>/dev/null | head -1; }
+ctl()    { local s; s=$(sock); [ -n "$s" ] || return 1; timeout 5 aroctl -s "$s" "$@"; }
+aropid() { pgrep -x -u "$UIDN" aro | head -1; }
+wins()   { ctl windows 2>/dev/null | awk 'NR>1' ; }
+nwins()  { wins | wc -l; }
+rssmb()  { local p=$1; [ -n "$p" ] || { echo 0; return; }
+           echo $(( $(ps -o rss= -p "$p" 2>/dev/null || echo 0) / 1024 )); }
+
+SUBPID=""
+start_sub() {
+    [ -n "$SUBPID" ] && kill "$SUBPID" 2>/dev/null
+    ( aroctl -s "$(sock)" subscribe 2>/dev/null |
+        while IFS= read -r l; do echo "$(date +%T) $l"; done >> "$EVT" ) &
+    SUBPID=$!
+}
+
+snapshot() { ctl windows > "$RUN/last-windows.txt" 2>/dev/null; }
+
+# ── aksi ──────────────────────────────────────────────────────────────────
+do_act() { ctl dispatch "$@" >/dev/null 2>&1 && { log "$*"; ACTIONS=$((ACTIONS+1)); } \
+                                             || log "GAGAL: $*"; }
+
+# spawn_app <pola-ERE app_id/title> <batas> <perintah...>
+spawn_app() {
+    local pat=$1 cap=$2; shift 2
+    local n; n=$(wins | grep -Eci -- "$pat")
+    [ "${n:-0}" -ge "$cap" ] && return 1
+    do_act spawn "$@"
+    sleep 4    # beri waktu aplikasi berat untuk muncul
+}
+
+spawn_random() {
+    case $((RANDOM % 8)) in
+        0) spawn_app 'kitty'                      3 kitty ;;
+        1) spawn_app 'mousepad'                   2 mousepad ;;
+        2) spawn_app 'firefox'                    1 firefox ;;
+        3) spawn_app 'freecad'                    1 freecad $FREECAD_FILE ;;
+        4) spawn_app 'kicad'                      1 kicad $KICAD_FILE ;;
+        5) [ -x "$OFFICE_BIN" ] && spawn_app 'onlyoffice|desktopeditors' 1 "$OFFICE_BIN" $OFFICE_FILE ;;
+        6) [ -n "$PDF_FILE" ] && spawn_app 'zathura' 1 zathura "$PDF_FILE" ;;
+        7) spawn_app 'kitty'                      3 kitty -e spf ;;
+    esac
+}
+
+random_action() {
+    local dirs=(left right up down) layouts=(manual dwindle monocle scroll)
+    local d=${dirs[RANDOM % 4]}
+    local w=$((1 + RANDOM % 4))
+
+    if [ "$(nwins)" -ge "$MAXWIN" ]; then do_act close; return; fi
+
+    local r=$((RANDOM % 100))
+    if   (( r < 12 )); then spawn_random
+    elif (( r < 24 )); then do_act workspace "$w"
+    elif (( r < 30 )); then do_act sendto "$w"
+    elif (( r < 38 )); then do_act layout "${layouts[RANDOM % 4]}"
+    elif (( r < 52 )); then do_act focus "$d"
+    elif (( r < 59 )); then do_act move "$d"
+    elif (( r < 64 )); then do_act resize "$d"
+    elif (( r < 68 )); then do_act float
+    elif (( r < 71 )); then do_act fullscreen
+    elif (( r < 75 )); then do_act group "$d"
+    elif (( r < 77 )); then do_act ungroup
+    elif (( r < 80 )); then do_act tab "$([ $((RANDOM%2)) = 0 ] && echo next || echo prev)"
+    elif (( r < 83 )); then do_act switch next
+    elif (( r < 85 )); then do_act overview; sleep 1; do_act overview
+    elif (( r < 87 )); then do_act scratchpad
+    elif (( r < 89 )); then do_act scratchpad_show
+    elif (( r < 91 )); then do_act split "$([ $((RANDOM%2)) = 0 ] && echo right || echo down)"
+    elif (( r < 93 )); then do_act maximize
+    elif (( r < 94 )); then do_act width next
+    elif (( r < 95 )); then ctl reload >/dev/null 2>&1; log "reload"
+    else                    do_act close
+    fi
+}
+
+# ── crash / hang ──────────────────────────────────────────────────────────
+collect_cores() {
+    local d=$1 f
+    for f in "$HOME"/core "$HOME"/core.*; do
+        [ -f "$f" ] && mv "$f" "$d/" && log "core dump disimpan: $d/$(basename "$f")"
+    done
+}
+
+on_crash() {
+    CRASHES=$((CRASHES+1))
+    local d="$RUN/crash/$CRASHES"; mkdir -p "$d"
+    log "=== CRASH #$CRASHES: proses aro (pid $CUR) hilang ==="
+    date '+%F %T' > "$d/waktu.txt"
+    tail -n 60 "$ACT" > "$d/aksi-terakhir.txt"
+    tail -n 60 "$EVT" > "$d/event-terakhir.txt" 2>/dev/null
+    cp "$RUN/last-windows.txt" "$d/window-sebelum-crash.txt" 2>/dev/null
+    tail -n 5 "$MET" > "$d/metrics-terakhir.csv"
+
+    # tunggu autologin menyalakan aro lagi (maks 4 menit)
+    local i new=""
+    for i in $(seq 1 120); do
+        new=$(aropid)
+        [ -n "$new" ] && ctl version >/dev/null 2>&1 && break
+        new=""; sleep 2
+    done
+    if [ -z "$new" ]; then
+        log "aro tidak kembali dalam 4 menit, tes dihentikan"
+        return 1
+    fi
+    sleep 3
+    cp "$LOGDIR/aro.log.old" "$d/aro.log.old" 2>/dev/null
+    collect_cores "$d"
+    CUR=$new
+    log "aro kembali (pid $CUR), tes dilanjutkan"
+    start_sub
+    return 0
+}
+
+check_hang() {
+    local i
+    for i in 1 2 3 4 5 6; do
+        ctl version >/dev/null 2>&1 && return 0
+        [ "$(aropid)" != "$CUR" ] && return 0     # ternyata crash, biar loop utama yang tangani
+        sleep 5
+    done
+    HANGS=$((HANGS+1))
+    local d="$RUN/hang/$HANGS"; mkdir -p "$d"
+    log "=== HANG #$HANGS: aro hidup (pid $CUR) tapi tidak menjawab >30 detik ==="
+    date '+%F %T' > "$d/waktu.txt"
+    tail -n 60 "$ACT" > "$d/aksi-terakhir.txt"
+    cp "$RUN/last-windows.txt" "$d/window-terakhir.txt" 2>/dev/null
+    cp "$LOGDIR/aro.log" "$d/aro.log" 2>/dev/null
+    ps -o pid,stat,wchan:30,rss,etime,cmd -p "$CUR" > "$d/status-proses.txt" 2>/dev/null
+    # tunggu sampai aro menjawab lagi atau crash
+    while ! ctl version >/dev/null 2>&1 && [ "$(aropid)" = "$CUR" ]; do
+        [ -f "$BASE/STOP" ] && break
+        sleep 10
+    done
+}
+
+metrics() {
+    local now=$1 rss xw xrss mem nw
+    rss=$(rssmb "$CUR")
+    xw=$(pgrep -x -u "$UIDN" Xwayland | head -1); xrss=$(rssmb "$xw")
+    mem=$(free -m | awk '/^Mem:/{print $3}')
+    nw=$(nwins)
+    echo "$(date +%T),$(( (now-START)/60 )),$CUR,$rss,$xrss,$mem,$nw,$CRASHES,$HANGS,$ACTIONS" >> "$MET"
+    snapshot
+}
+
+finish() {
+    [ -n "$SUBPID" ] && kill "$SUBPID" 2>/dev/null
+    pkill -u "$UIDN" -f "aroctl.*subscribe" 2>/dev/null
+    local dur=$(( ($(date +%s) - START) / 60 ))
+    {
+        echo "=== Ringkasan stress test aro ==="
+        echo "Mulai        : $(date -d @"$START" '+%F %T')"
+        echo "Selesai      : $(date '+%F %T')"
+        echo "Durasi       : $dur menit (target $((HOURS*60)))"
+        echo "Aksi sukses  : $ACTIONS"
+        echo "Aksi gagal   : $(grep -c ' GAGAL: ' "$ACT")"
+        echo "Crash aro    : $CRASHES  (detail: $RUN/crash/)"
+        echo "Hang aro     : $HANGS  (detail: $RUN/hang/)"
+        awk -F, 'NR>1{ if(min==""||$4<min)min=$4; if($4>max)max=$4; last=$4;
+                       if($5>xmax)xmax=$5; if($6>mmax)mmax=$6 }
+                 END{ printf "RSS aro      : awal %s MB, akhir %s MB, puncak %s MB\n", first, last, max;
+                      printf "RSS Xwayland : puncak %s MB\n", xmax;
+                      printf "RAM terpakai : puncak %s MB\n", mmax }' first="$RSS0" "$MET"
+        echo
+        echo "Aksi terbanyak:"
+        grep -v -e 'GAGAL' -e '===' "$ACT" | awk '{print $2}' | sort | uniq -c | sort -rn | head -10
+    } > "$SUM"
+    log "tes selesai, ringkasan: $SUM"
+}
+
+# ── mulai ─────────────────────────────────────────────────────────────────
+command -v aroctl >/dev/null || { echo "aroctl tidak ditemukan"; exit 1; }
+CUR=$(aropid)
+[ -n "$CUR" ] && ctl version >/dev/null 2>&1 || { echo "aro tidak berjalan / socket tidak ditemukan"; exit 1; }
+
+START=$(date +%s); END=$((START + HOURS*3600))
+CRASHES=0; HANGS=0; ACTIONS=0; LASTMET=0
+RSS0=$(rssmb "$CUR")
+echo "time,menit,aro_pid,aro_rss_mb,xwayland_rss_mb,ram_used_mb,windows,crash,hang,aksi" > "$MET"
+trap 'finish; exit 0' INT TERM
+
+log "mulai: $HOURS jam, aro pid $CUR, versi $(ctl version 2>/dev/null | head -1)"
+start_sub
+snapshot
+
+while [ "$(date +%s)" -lt "$END" ] && [ ! -f "$BASE/STOP" ]; do
+    now=$(date +%s)
+    pid=$(aropid)
+    if [ "$pid" != "$CUR" ]; then
+        on_crash || break
+        continue
+    fi
+    check_hang
+    [ "$(aropid)" != "$CUR" ] && continue
+
+    random_action
+
+    if (( now - LASTMET >= 60 )); then metrics "$now"; LASTMET=$now; fi
+    sleep $((1 + RANDOM % 3))
+done
+
+finish

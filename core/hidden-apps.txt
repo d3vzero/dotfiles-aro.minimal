@@ -1,0 +1,8 @@
+# Entry .desktop yang disembunyikan dari fuzzel (nama file tanpa .desktop).
+# Yang tidak ada di /usr/share/applications otomatis dilewati.
+# Cek kandidat: ls /usr/share/applications
+avahi-discover
+bssh
+bvnc
+lstopo
+# TODO: entry Qt (designer/assistant/linguist) -- isi nama persisnya

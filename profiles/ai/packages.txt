@@ -1,0 +1,4 @@
+# ai -- llama.cpp backend Vulkan (jalan di GPU AMD lewat vulkan-radeon, tanpa ROCm)
+cmake
+vulkan-headers
+shaderc

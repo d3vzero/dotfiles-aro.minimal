@@ -1,0 +1,6 @@
+#!/bin/sh
+# Ctrl+Alt+Del -> menu Shutdown/Reboot (loginctl, tanpa password)
+case "$(printf 'Shutdown\nReboot\n' | fuzzel --dmenu --prompt 'Power: ')" in
+  Shutdown) loginctl poweroff ;;
+  Reboot)   loginctl reboot ;;
+esac

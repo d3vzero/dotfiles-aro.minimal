@@ -1,0 +1,7 @@
+# work -- FreeCAD, KiCad (OnlyOffice lewat AppImage di setup.sh)
+freecad
+kicad
+kicad-library
+# provider eksplisit: hindari prompt yang tidak ke-skip --noconfirm
+tesseract-data-eng
+libvpl

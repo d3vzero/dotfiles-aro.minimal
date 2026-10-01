@@ -1,0 +1,5 @@
+# daily -- gaming + rekam (butuh [multilib], diaktifkan otomatis)
+steam
+lib32-mesa
+lib32-vulkan-radeon
+obs-studio

@@ -1,0 +1,64 @@
+# core -- dipakai semua profil. Satu paket per baris, '#' = komentar.
+# amd-ucode ditambah otomatis kalau bukan VM; openssh kalau ENABLE_SSH=yes.
+
+# jaringan
+networkmanager
+networkmanager-dinit
+
+# grafis AMD
+mesa
+vulkan-radeon
+
+# audio (pipewire-jack eksplisit: hindari prompt provider "jack")
+pipewire
+pipewire-pulse
+pipewire-jack
+wireplumber
+
+# sesi wayland
+xorg-xwayland
+xdg-desktop-portal-wlr
+xdg-desktop-portal-gtk
+xdg-utils
+kitty
+fuzzel
+mako
+polkit
+
+# USB
+udisks2
+udiskie
+
+# dokumen
+zathura
+zathura-pdf-mupdf
+mousepad
+
+# arsip
+zip
+unzip
+7zip
+unrar
+
+# font (kompatibel Office)
+noto-fonts
+ttf-liberation
+ttf-carlito
+ttf-caladea
+
+# aplikasi
+firefox
+fuse2
+
+# build aro + tool script
+meson
+ninja
+wayland
+wayland-protocols
+wlroots0.20
+libxkbcommon
+pixman
+pango
+cairo
+curl
+jq
