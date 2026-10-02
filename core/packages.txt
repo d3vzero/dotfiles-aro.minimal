@@ -23,6 +23,7 @@ xdg-utils
 kitty
 fuzzel
 mako
+libnotify     # notify-send (sung-yt, script lain)
 polkit
 
 # USB

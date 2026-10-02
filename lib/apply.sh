@@ -167,6 +167,9 @@ setup_public_home() {
     # .bash_profile
     {
         echo '[ -f ~/.bashrc ] && . ~/.bashrc'
+        # ~/.local/bin wajib di PATH SEBELUM aro start: app per-user (Sung) dibuka
+        # fuzzel lewat Exec= tanpa path lengkap. Titik dua jangan sampai hilang.
+        echo 'export PATH="$HOME/.local/bin:$PATH"'
         echo 'if [ -z "$WAYLAND_DISPLAY" ] && [ "$(tty)" = /dev/tty1 ]; then'
         if [ "$IS_VM" = "yes" ]; then
             echo '  export WLR_NO_HARDWARE_CURSORS=1   # VM (virtio-gpu): kursor meleset tanpa ini'

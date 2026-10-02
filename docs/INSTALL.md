@@ -133,6 +133,11 @@ Ganti profil: edit `PROFILES` di `/etc/dotfiles-aro.minimal.conf`, lalu jalankan
     tetap gagal). `Assy` bisa melakukannya sendiri tanpa sudo.
   - `UPDATE_SUNG=1` atau mengganti `SUNG_REV` mengembalikan yt-dlp ke versi
     terkunci; script langsung menjalankan `sung-yt update` sesudahnya.
+  - Aplikasi dari fuzzel "diam" tanpa jendela: jalankan dari kitty
+    untuk melihat error, lalu cek `command -v <app>` dan baris `Exec=`
+    di file `.desktop`-nya. Peringatan `qt.qpa.services ... App info not
+    found for 'sung'` dan `qt.qml.propertyCache` saat Sung start aman
+    diabaikan.
 - **ai** — llama.cpp dengan backend **Vulkan** (jalan di GPU AMD lewat
   `vulkan-radeon`, tanpa ROCm). Binary: `llama-server`, `llama-cli`.
   Model GGUF download manual ke `/srv/models/`.

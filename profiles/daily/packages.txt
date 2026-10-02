@@ -18,4 +18,3 @@ qt6-imageformats
 nodejs                  # runtime JS untuk yt-dlp
 libsecret               # simpan login server di keyring
 libpulse                # pactl: pause saat output audio hilang
-libnotify               # notify-send untuk sung-yt
