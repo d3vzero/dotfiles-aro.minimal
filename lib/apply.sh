@@ -80,7 +80,7 @@ install_packages() {
 
 build_aro() {
     if [ -x /usr/bin/aro ] && [ "${UPDATE_ARO:-0}" != "1" ]; then
-        echo "    aro sudah ada ($(aro --version 2>/dev/null || echo '?')) -- skip (UPDATE_ARO=1 untuk rebuild)"
+        echo "    aro sudah ada -- skip (UPDATE_ARO=1 untuk rebuild)"
         return 0
     fi
     rm -rf /opt/aro-src
