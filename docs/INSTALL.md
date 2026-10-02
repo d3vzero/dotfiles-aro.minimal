@@ -92,6 +92,7 @@ Tambahan dari repo ini:
 | `Ctrl+Alt+Del` | Menu Shutdown / Reboot |
 | `Super+e` | File manager (superfile) |
 | `Super+n` | Atur jaringan (nmtui) |
+| `Super+Shift+c` | Cheatsheet keybind aro + superfile (dibaca dari config aktif) |
 | `Super+Shift+u` | *(profil daily)* Update yt-dlp untuk Sung (`sung-yt update`) |
 
 ## 5. Admin & update

@@ -195,6 +195,12 @@ setup_public_home() {
             { echo; cat "$REPO_DIR/profiles/$pr/aro.conf"; } >> "$AC"
         fi
     done
+    # Keybind dobel = salah satu tidak jalan; tampilkan supaya ketahuan
+    local dup
+    dup="$(awk '/^[[:space:]]*bind[[:space:]]*=/ { sub(/^[^=]*=[[:space:]]*/, ""); k = $0;
+                sub(/[[:space:]]*,.*/, "", k); c[tolower(k)]++ }
+                END { for (k in c) if (c[k] > 1) print k }' "$AC")"
+    if [ -n "$dup" ]; then warn "aro: keybind dobel di config: $(echo $dup)"; fi
     if ! grep -q '^bar = false' "$AC";       then warn "aro: 'bar = false' tidak ter-set (config.example berubah?)"; fi
     if ! grep -q '^wallpaper = none' "$AC";  then warn "aro: 'wallpaper = none' tidak ter-set (config.example berubah?)"; fi
     if ! grep -q 'spawn, kitty$' "$AC";      then warn "aro: terminal default belum diganti ke kitty (config.example berubah?)"; fi

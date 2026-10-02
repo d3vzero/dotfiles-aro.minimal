@@ -1,0 +1,47 @@
+#!/bin/bash
+# cheatsheet -- daftar keybind aro + superfile di fuzzel (Super+Shift+c).
+# Dibaca langsung dari config yang AKTIF, jadi selalu sesuai dengan yang
+# terpasang (termasuk bind tambahan profil). Hanya tampilan: Esc untuk tutup.
+CFG="${XDG_CONFIG_HOME:-$HOME/.config}"
+ARO_CONF="$CFG/aro/config"
+SPF_KEYS="$CFG/superfile/hotkeys.toml"
+
+{
+  echo "━━━━━━━━━━ aro ━━━━━━━━━━"
+  if [ -f "$ARO_CONF" ]; then
+    awk '
+      /^[[:space:]]*bind[[:space:]]*=/ {
+        sub(/^[[:space:]]*bind[[:space:]]*=[[:space:]]*/, "")
+        n = index($0, ",")
+        key = substr($0, 1, n - 1); act = substr($0, n + 1)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", act)
+        sub(/,[[:space:]]*/, " ", act)          # "spawn, kitty" -> "spawn kitty"
+        gsub(/mod\+/, "Super+", key)
+        printf "%-28s %s\n", key, act
+      }' "$ARO_CONF"
+  else
+    echo "(config aro tidak ditemukan: $ARO_CONF)"
+  fi
+  echo
+  echo "━━━━━━━━━━ superfile (spf) ━━━━━━━━━━"
+  if [ -f "$SPF_KEYS" ]; then
+    awk '
+      /^[[:space:]]*[A-Za-z_]+[[:space:]]*=[[:space:]]*\[/ {
+        name = $0; sub(/[[:space:]]*=.*/, "", name); gsub(/^[[:space:]]+/, "", name)
+        keys = $0; sub(/^[^\[]*\[/, "", keys); sub(/\].*/, "", keys)
+        n = split(keys, arr, ","); out = ""
+        for (i = 1; i <= n; i++) {
+          k = arr[i]; gsub(/[\042\047[:space:]]/, "", k)
+          if (k != "") out = out (out == "" ? "" : " / ") k
+        }
+        if (out == "") next
+        gsub(/_/, " ", name)
+        printf "%-28s %s\n", out, name
+      }' "$SPF_KEYS"
+  else
+    echo "(buka superfile sekali dulu: Super+e -- hotkeys.toml dibuat saat itu)"
+  fi
+  echo "?                            bantuan lengkap di dalam superfile"
+} | fuzzel --dmenu --font "monospace:size=11" --prompt "Cheatsheet ❯ " \
+           --width 80 --lines 25 >/dev/null
