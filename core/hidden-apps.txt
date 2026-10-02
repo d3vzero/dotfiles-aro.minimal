@@ -1,8 +1,17 @@
 # Entry .desktop yang disembunyikan dari fuzzel (nama file tanpa .desktop).
-# Yang tidak ada di /usr/share/applications otomatis dilewati.
-# Cek kandidat: ls /usr/share/applications
+# Boleh pola glob (mis. qv4l*). Yang tidak ada otomatis dilewati.
+# Cari nama file: grep -lE '^Name=<nama di fuzzel>' /usr/share/applications/*.desktop
 avahi-discover
 bssh
 bvnc
 lstopo
-# TODO: entry Qt (designer/assistant/linguist) -- isi nama persisnya
+# CMake GUI (ikut terpasang dari cmake)
+cmake-gui
+# Tool Qt (qt6-tools): Assistant, Widgets Designer, Linguist, D-Bus Viewer
+assistant
+designer
+linguist
+qdbusviewer
+# v4l-utils: Qt V4L2 test utility / video capture
+qv4l2
+qvidcap

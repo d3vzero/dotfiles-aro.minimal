@@ -205,12 +205,15 @@ setup_public_home() {
     cp "$T/config/mimeapps.list"     "$H/.config/mimeapps.list"
 
     # Sembunyikan entry dari fuzzel
-    local n src
+    local n src dst
     while read -r n; do
-        src="/usr/share/applications/$n.desktop"
-        if [ ! -f "$src" ]; then continue; fi
-        cp "$src" "$H/.local/share/applications/"
-        sed -i '/^NoDisplay=/d; /^\[Desktop Entry\]/a NoDisplay=true' "$H/.local/share/applications/$n.desktop"
+        # $n sengaja TANPA kutip: boleh pola glob (mis. qv4l*)
+        for src in /usr/share/applications/$n.desktop; do
+            if [ ! -f "$src" ]; then continue; fi
+            dst="$H/.local/share/applications/$(basename "$src")"
+            cp "$src" "$dst"
+            sed -i '/^NoDisplay=/d; /^\[Desktop Entry\]/a NoDisplay=true' "$dst"
+        done
     done < <(pkg_list "$REPO_DIR/core/hidden-apps.txt")
 
     chown -R "$PUBLIC_USER:$PUBLIC_USER" "$H"
