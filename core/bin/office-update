@@ -1,0 +1,229 @@
+#!/bin/bash
+# office-update — menu update PC kantor (aro), dijalankan oleh user umum
+#
+#   office-update menu        Super+U       pilih satu item lewat fuzzel
+#   office-update all         Super+Ctrl+U  konfirmasi, lalu update semua yang ada update-nya
+#   office-update check                     tampilkan status di terminal
+#   office-update run <item>                jalankan update (dipakai di dalam kitty)
+#
+# item: system onlyoffice superfile aro ytdlp sung
+# Bagian root dijalankan lewat /usr/local/sbin/office-update-root dengan
+# password Admin SATU kali (su Admin + sudo NOPASSWD khusus helper itu).
+# Dipasang dotfiles-aro.minimal ke /usr/local/bin (milik root).
+# Butuh: fuzzel, kitty, curl, git, pacman-contrib (checkupdates), libnotify.
+
+ROOT_HELPER=/usr/local/sbin/office-update-root
+# nama Admin dibaca dari config mesin (file 644, aman di-source user biasa)
+ADMIN_USER=$(. /etc/dotfiles-aro.minimal.conf 2>/dev/null; echo "${ADMIN_USER:-Admin}")
+ARO_SRC=/opt/aro-src
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/office-update"
+SUNG_REPO=https://github.com/yappologistic/Sung
+ARO_REPO=https://github.com/simeulinuxkaliaiwr/aro
+SUNG_PY="$HOME/.local/lib/sung/runtime/bin/python"
+SELF=$(readlink -f "$0")
+mkdir -p "$STATE"
+
+ROOT_ITEMS="system onlyoffice superfile aro"
+ALL_ITEMS="system ytdlp onlyoffice superfile"      # yang ikut "update semua"
+MENU_ITEMS="system ytdlp onlyoffice superfile sung aro"
+
+label() {
+    case $1 in
+        system)     echo "Sistem" ;;
+        ytdlp)      echo "YouTube-Sung" ;;
+        onlyoffice) echo "OnlyOffice" ;;
+        superfile)  echo "superfile" ;;
+        sung)       echo "Sung" ;;
+        aro)        echo "aro" ;;
+    esac
+}
+desc() {
+    case $1 in
+        system)     echo "paket pacman: FreeCAD, KiCad, Firefox, Mesa, kernel, dll." ;;
+        ytdlp)      echo "yt-dlp di Sung, rollback otomatis kalau gagal" ;;
+        onlyoffice) echo "AppImage dari rilis resmi GitHub" ;;
+        superfile)  echo "binary dari rilis resmi GitHub" ;;
+        sung)       echo "build ulang dari GitHub (commit terbaru)" ;;
+        aro)        echo "build ulang window manager, aktif setelah reboot" ;;
+    esac
+}
+
+gh_latest() {
+    curl -fsS --max-time 10 "https://api.github.com/repos/$1/releases/latest" 2>/dev/null |
+        sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1
+}
+git_remote_head() { timeout 15 git ls-remote "$1" HEAD 2>/dev/null | cut -c1-7; }
+
+# status <item>  →  "NEED|teks" | "OK|teks" | "ERR|teks" | "SKIP|teks"
+status() {
+    local cur latest out rc
+    case $1 in
+        system)
+            command -v checkupdates >/dev/null || { echo "ERR|pacman-contrib belum terpasang"; return; }
+            out=$(timeout 90 checkupdates 2>/dev/null); rc=$?
+            case $rc in
+                0) echo "NEED|$(printf '%s\n' "$out" | grep -c .) paket" ;;
+                2) echo "OK|terbaru" ;;
+                *) echo "ERR|gagal cek (offline?)" ;;
+            esac ;;
+        ytdlp)
+            [ -x "$SUNG_PY" ] || { echo "SKIP|Sung tidak terpasang"; return; }
+            cur=$("$SUNG_PY" -c 'from importlib.metadata import version; print(version("yt-dlp"))' 2>/dev/null)
+            latest=$(curl -fsS --max-time 10 https://pypi.org/pypi/yt-dlp/json 2>/dev/null |
+                     "$SUNG_PY" -c 'import json,sys; print(json.load(sys.stdin)["info"]["version"])' 2>/dev/null)
+            [ -n "$latest" ] || { echo "ERR|gagal cek"; return; }
+            [ "$cur" = "$latest" ] && echo "OK|$cur" || echo "NEED|$cur → $latest" ;;
+        onlyoffice)
+            [ -x /opt/onlyoffice/OnlyOffice.AppImage ] || { echo "SKIP|tidak terpasang (profil work)"; return; }
+            cur=$(cat /opt/onlyoffice/VERSION 2>/dev/null || echo "?")
+            latest=$(gh_latest ONLYOFFICE/DesktopEditors)
+            [ -n "$latest" ] || { echo "ERR|gagal cek"; return; }
+            [ "$cur" = "$latest" ] && echo "OK|$cur" || echo "NEED|$cur → $latest" ;;
+        superfile)
+            cur=$(spf --version 2>/dev/null | awk '{print $NF}')
+            latest=$(gh_latest yorukot/superfile)
+            [ -n "$latest" ] || { echo "ERR|gagal cek"; return; }
+            [ "$cur" = "$latest" ] && echo "OK|$cur" || echo "NEED|${cur:-?} → $latest" ;;
+        aro)
+            cur=$(git -c safe.directory="$ARO_SRC" -C "$ARO_SRC" rev-parse --short=7 HEAD 2>/dev/null)
+            latest=$(git_remote_head "$ARO_REPO")
+            [ -n "$latest" ] || { echo "ERR|gagal cek"; return; }
+            [ "$cur" = "$latest" ] && echo "OK|$cur" || echo "NEED|${cur:-?} → $latest" ;;
+        sung)
+            [ -x "$HOME/.local/bin/sung" ] || { echo "SKIP|Sung tidak terpasang"; return; }
+            cur=$(cut -c1-7 "$STATE/sung.rev" 2>/dev/null || echo "?")
+            latest=$(git_remote_head "$SUNG_REPO")
+            [ -n "$latest" ] || { echo "ERR|gagal cek"; return; }
+            [ "$cur" = "$latest" ] && echo "OK|$cur" || echo "NEED|${cur:-?} → $latest" ;;
+    esac
+}
+
+# cek semua item sekaligus (paralel), hasil di $TMPST/<item>
+check_all() {
+    TMPST=$(mktemp -d)
+    local i
+    for i in "$@"; do status "$i" > "$TMPST/$i" & done
+    wait
+}
+st()   { cut -d'|' -f1 "$TMPST/$1"; }
+sttx() { cut -d'|' -f2- "$TMPST/$1"; }
+mark() { case $(st "$1") in NEED) echo "●";; OK) echo "✓";; SKIP) echo "–";; *) echo "?";; esac; }
+
+notify() { command -v notify-send >/dev/null && notify-send -a Update "$@"; }
+
+open_terminal() {   # jalankan "run <item...>" di kitty
+    exec kitty --class office-update --title "Update" "$SELF" run "$@"
+}
+
+cmd_menu() {
+    notify -t 3000 "Mengecek update…" "Tunggu beberapa detik."
+    check_all $MENU_ITEMS
+    local lines="" i sel key
+    for i in $MENU_ITEMS; do
+        lines+=$(printf '%-13s %s %s   (%s)' "$(label "$i")" "$(mark "$i")" "$(sttx "$i")" "$(desc "$i")")$'\n'
+    done
+    lines+="Cek-saja     tampilkan status lengkap di terminal"$'\n'
+    rm -rf "$TMPST"
+    sel=$(printf '%s' "$lines" | fuzzel --dmenu --prompt 'Update: ' --width 90 --lines 8) || exit 0
+    key=${sel%% *}
+    case $key in
+        Cek-saja) exec kitty --class office-update --title "Update" "$SELF" check-hold ;;
+        Sistem) open_terminal system ;;  YouTube-Sung) open_terminal ytdlp ;;
+        OnlyOffice) open_terminal onlyoffice ;;  superfile) open_terminal superfile ;;
+        Sung) open_terminal sung ;;  aro) open_terminal aro ;;
+    esac
+}
+
+cmd_all() {
+    notify -t 3000 "Mengecek update…" "Tunggu beberapa detik."
+    check_all $ALL_ITEMS
+    local need=() i lines sel
+    for i in $ALL_ITEMS; do [ "$(st "$i")" = NEED ] && need+=("$i"); done
+    lines="✖ Batal"$'\n'
+    if [ ${#need[@]} -gt 0 ]; then
+        lines+="✔ Lanjutkan update ${#need[@]} item"$'\n'
+    fi
+    lines+="──────── yang dicek ────────"$'\n'
+    for i in $ALL_ITEMS; do
+        lines+=$(printf '%s %-13s %s   (%s)' "$(mark "$i")" "$(label "$i")" "$(sttx "$i")" "$(desc "$i")")$'\n'
+    done
+    lines+="──────────────────────────"$'\n'
+    lines+="● = ada update, akan diupdate   ✓ = sudah terbaru"$'\n'
+    lines+="Tidak termasuk: Sung dan aro (manual lewat Super+U)"$'\n'
+    lines+="Butuh password ${ADMIN_USER} satu kali"$'\n'
+    rm -rf "$TMPST"
+    if [ ${#need[@]} -eq 0 ]; then
+        printf '%s' "$lines" | fuzzel --dmenu --prompt 'Semua sudah terbaru ' --width 90 --lines 11 >/dev/null
+        exit 0
+    fi
+    sel=$(printf '%s' "$lines" | fuzzel --dmenu --prompt 'Update semua? ' --width 90 --lines 11) || exit 0
+    case $sel in "✔ Lanjutkan"*) open_terminal "${need[@]}" ;; esac
+}
+
+cmd_check() {
+    echo "Mengecek update…"
+    check_all $MENU_ITEMS
+    local i
+    for i in $MENU_ITEMS; do
+        printf '%s %-13s %-28s %s\n' "$(mark "$i")" "$(label "$i")" "$(sttx "$i")" "$(desc "$i")"
+    done
+    rm -rf "$TMPST"
+}
+
+sung_update() {
+    local latest cur tmp
+    latest=$(timeout 15 git ls-remote "$SUNG_REPO" HEAD | cut -f1)
+    cur=$(cat "$STATE/sung.rev" 2>/dev/null)
+    [ -n "$latest" ] || { echo "!! Gagal cek GitHub Sung"; return 1; }
+    [ "$latest" = "$cur" ] && { echo "Sung sudah terbaru (${cur:0:7})"; return 0; }
+    tmp=$(mktemp -d)
+    if git clone -q "$SUNG_REPO" "$tmp/sung" &&
+       git -C "$tmp/sung" checkout -q "$latest" &&
+       (cd "$tmp/sung" && ./scripts/install.sh); then
+        echo "$latest" > "$STATE/sung.rev"
+        echo "Sung diperbarui ke ${latest:0:7}. Tutup dan buka ulang Sung."
+        echo "==> yt-dlp (install.sh Sung memasang versi terkunci)"
+        sung-yt update || true
+    else
+        echo "!! Build Sung gagal, versi lama tetap dipakai."
+    fi
+    rm -rf "$tmp"
+}
+
+cmd_run() {
+    local root=() user=() i rc=0
+    for i in "$@"; do
+        case " $ROOT_ITEMS " in *" $i "*) root+=("$i") ;; *) user+=("$i") ;; esac
+    done
+    echo "=== Update: $* ==="
+    if [ ${#root[@]} -gt 0 ]; then
+        echo
+        echo "Bagian sistem (${root[*]}) butuh password ${ADMIN_USER}:"
+        su "$ADMIN_USER" -c "sudo -n $ROOT_HELPER ${root[*]}" || { rc=1; echo "!! Bagian sistem gagal atau dibatalkan."; }
+    fi
+    for i in "${user[@]}"; do
+        echo
+        case $i in
+            ytdlp) echo "==> YouTube di Sung (yt-dlp)"; sung-yt update || rc=1 ;;
+            sung)  echo "==> Sung"; sung_update || rc=1 ;;
+        esac
+    done
+    echo
+    if [ $rc -eq 0 ]; then
+        echo "Selesai."
+        notify "Update selesai" "$*"
+    else
+        echo "Selesai dengan error, lihat pesan di atas."
+        notify -u critical "Update selesai dengan error" "$*"
+    fi
+    read -rp "Tekan Enter untuk menutup…" _
+}
+
+case "${1:-}" in
+    menu)       cmd_menu ;;
+    all)        cmd_all ;;
+    check)      cmd_check ;;
+    check-hold) cmd_check; read -rp "Tekan Enter untuk menutup…" _ ;;
+    run)        shift; cmd_run "$@" ;;
+    *) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac

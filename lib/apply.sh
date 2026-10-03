@@ -118,6 +118,18 @@ install_superfile() {
 install_system_files() {
     # Script utilitas ke /usr/local/bin: milik root, tidak bisa diubah PUBLIC_USER
     install -m755 "$REPO_DIR"/core/bin/* /usr/local/bin/
+    # Helper root menu update (Super+U). Sudoers WAJIB divalidasi dulu:
+    # file sudoers rusak bisa mengunci sudo sepenuhnya.
+    install -o root -g root -m755 "$REPO_DIR"/core/sbin/* /usr/local/sbin/
+    local sd=/etc/sudoers.d/office-update tmp
+    tmp="$(mktemp)"
+    echo "$ADMIN_USER ALL=(root) NOPASSWD: /usr/local/sbin/office-update-root" > "$tmp"
+    if visudo -cqf "$tmp"; then
+        install -o root -g root -m440 "$tmp" "$sd"
+    else
+        warn "sudoers office-update tidak valid -- TIDAK dipasang"
+    fi
+    rm -f "$tmp"
 
     mkdir -p /etc/dinit.d/config
     if [ "$AUTOLOGIN" = "yes" ]; then

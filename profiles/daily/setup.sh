@@ -46,6 +46,9 @@ install_sung() {
             git clone https://github.com/yappologistic/Sung.git "$src"
             git -C "$src" checkout --quiet "$SUNG_REV"
             (cd "$src" && ./scripts/install.sh)
+            # commit lengkap untuk status Sung di menu update (Super+U)
+            mkdir -p "$HOME/.local/state/office-update"
+            git -C "$src" rev-parse HEAD > "$HOME/.local/state/office-update/sung.rev"
             rm -rf "$(dirname "$src")"
         '
     echo "$SUNG_REV" > "$STATE_DIR/sung.rev"
@@ -54,7 +57,7 @@ install_sung() {
     # Gagal di sini (offline, YouTube berubah) tidak menggagalkan instalasi.
     runuser -u "$PUBLIC_USER" -- env -i HOME="$PUBLIC_HOME" USER="$PUBLIC_USER" \
         PATH=/usr/local/bin:/usr/bin:/bin LANG=en_US.UTF-8 \
-        sung-yt update || echo "!! sung-yt update gagal -- jalankan nanti: Super+Shift+u"
+        sung-yt update || echo "!! sung-yt update gagal -- jalankan nanti: Super+U -> YouTube-Sung"
 }
 
 install_proton_ge

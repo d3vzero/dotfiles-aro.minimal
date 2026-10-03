@@ -93,7 +93,8 @@ Tambahan dari repo ini:
 | `Super+e` | File manager (superfile) |
 | `Super+n` | Atur jaringan (nmtui) |
 | `Super+Shift+c` | Cheatsheet keybind aro + superfile (dibaca dari config aktif) |
-| `Super+Shift+u` | *(profil daily)* Update yt-dlp untuk Sung (`sung-yt update`) |
+| `Super+u` | Menu update: pilih satu item (lihat bagian 5a) |
+| `Super+Ctrl+u` | Update semua yang ada update-nya (konfirmasi, default **Batal**) |
 
 ## 5. Admin & update
 
@@ -117,6 +118,37 @@ Ganti profil: edit `PROFILES` di `/etc/dotfiles-aro.minimal.conf`, lalu jalankan
 > adalah sumber kebenaran. Perubahan langsung di home `Assy` akan hilang;
 > ubah di repo lalu jalankan `update.sh`.
 
+## 5a. Menu update (Super+U) — untuk user umum
+
+`Assy` bisa memperbarui sendiri tanpa sudo; bagian sistem meminta
+**password Admin satu kali**.
+
+| Status | Arti |
+|---|---|
+| ● | ada update |
+| ✓ | sudah terbaru |
+| – | tidak terpasang di mesin ini |
+| ? | gagal cek (offline / batas API GitHub) |
+
+Item: Sistem (pacman), YouTube-Sung (yt-dlp), OnlyOffice, superfile,
+Sung, aro, dan *Cek-saja*. `Super+Ctrl+U` hanya mencakup Sistem, yt-dlp,
+OnlyOffice, superfile — **Sung dan aro sengaja manual** lewat `Super+U`
+karena dibuild dari commit terbaru upstream (di luar versi yang dikunci).
+
+Komponen: `/usr/local/bin/office-update` (menu), `/usr/local/sbin/office-update-root`
+(daftar putih: system | onlyoffice | superfile | aro), dan
+`/etc/sudoers.d/office-update` (Admin boleh menjalankan helper itu tanpa
+sudo kedua; divalidasi `visudo` sebelum dipasang).
+
+> Versi dari menu boleh lebih baru dari yang dikunci di config
+> (`ARO_REF`, `SUNG_REV`, `SPF_VERSION`). `update.sh` biasa tidak
+> menimpanya; `UPDATE_ARO=1` / `UPDATE_SUNG=1` mengembalikan ke versi
+> terkunci.
+
+Risiko: update Python sistem (minor naik) bisa merusak venv Sung —
+`sung-yt check` melapor rusak; perbaiki dengan Super+U → Sung. Kalau
+`wlroots0.20` diganti paket major baru, aro perlu dibuild ulang.
+
 ## 6. Catatan per profil
 
 - **work** — FreeCAD, KiCad (+library), OnlyOffice (AppImage resmi di
@@ -130,8 +162,8 @@ Ganti profil: edit `PROFILES` di `/etc/dotfiles-aro.minimal.conf`, lalu jalankan
     Python milik `Assy`), dikunci ke commit `SUNG_REV` yang sudah dites.
   - `sung-yt` mengecek YouTube 60 detik setelah login lalu tiap 6 jam,
     dan memberi notifikasi **hanya saat status berubah** (rusak / pulih).
-    Kalau rusak: `Super+Shift+u` (update yt-dlp + rollback otomatis kalau
-    tetap gagal). `Assy` bisa melakukannya sendiri tanpa sudo.
+    Kalau rusak: `Super+U` → YouTube-Sung (update yt-dlp + rollback
+    otomatis kalau tetap gagal). `Assy` bisa melakukannya sendiri tanpa sudo.
   - `UPDATE_SUNG=1` atau mengganti `SUNG_REV` mengembalikan yt-dlp ke versi
     terkunci; script langsung menjalankan `sung-yt update` sesudahnya.
   - Aplikasi dari fuzzel "diam" tanpa jendela: jalankan dari kitty

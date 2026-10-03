@@ -23,6 +23,7 @@ xdg-utils
 kitty
 fuzzel
 mako
+pacman-contrib   # checkupdates (menu update Super+U)
 libnotify     # notify-send (sung-yt, script lain)
 polkit
 

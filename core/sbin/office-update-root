@@ -1,0 +1,100 @@
+#!/bin/bash
+# /usr/local/sbin/office-update-root — bagian update yang butuh root
+# Dipanggil oleh office-update lewat: su Admin -c "sudo -n office-update-root <item...>"
+# Hanya menerima item dari daftar putih: system onlyoffice superfile aro
+# Pasang: install -o root -g root -m 755 office-update-root /usr/local/sbin/
+set -u
+[ "$(id -u)" = 0 ] || { echo "!! harus dijalankan sebagai root"; exit 1; }
+export LC_ALL=C.UTF-8
+
+gh_latest() {
+    curl -fsS --max-time 15 "https://api.github.com/repos/$1/releases/latest" 2>/dev/null |
+        sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1
+}
+
+up_system() {
+    echo "==> Sistem (pacman -Syu)"
+    pacman -Syu || return 1
+    # kernel baru terpasang → folder modul kernel yang sedang jalan hilang
+    if [ ! -d "/usr/lib/modules/$(uname -r)" ]; then
+        echo ">> Kernel diperbarui: REBOOT dianjurkan (Ctrl+Alt+Del → Reboot)."
+    fi
+}
+
+up_onlyoffice() {
+    echo "==> OnlyOffice"
+    local dir=/opt/onlyoffice latest cur
+    [ -x "$dir/OnlyOffice.AppImage" ] || { echo "tidak terpasang (profil work) -- skip"; return 0; }
+    latest=$(gh_latest ONLYOFFICE/DesktopEditors)
+    [ -n "$latest" ] || { echo "!! gagal cek rilis OnlyOffice"; return 1; }
+    cur=$(cat "$dir/VERSION" 2>/dev/null || echo "?")
+    [ "$cur" = "$latest" ] && { echo "sudah terbaru ($cur)"; return 0; }
+    echo "unduh $latest (~600 MB)…"
+    curl -fL --progress-bar -o "$dir/OnlyOffice.AppImage.new" \
+        "https://github.com/ONLYOFFICE/DesktopEditors/releases/download/$latest/DesktopEditors-x86_64.AppImage" \
+        || { rm -f "$dir/OnlyOffice.AppImage.new"; echo "!! unduhan gagal"; return 1; }
+    if [ "$(stat -c %s "$dir/OnlyOffice.AppImage.new")" -lt 100000000 ]; then
+        rm -f "$dir/OnlyOffice.AppImage.new"; echo "!! file terlalu kecil, dibatalkan"; return 1
+    fi
+    chmod 755 "$dir/OnlyOffice.AppImage.new"
+    mv -f "$dir/OnlyOffice.AppImage.new" "$dir/OnlyOffice.AppImage"   # aman walau sedang dibuka
+    echo "$latest" > "$dir/VERSION"
+    echo "OnlyOffice $cur → $latest. Tutup dan buka ulang OnlyOffice."
+}
+
+up_superfile() {
+    echo "==> superfile"
+    local latest cur tmp
+    latest=$(gh_latest yorukot/superfile)
+    [ -n "$latest" ] || { echo "!! gagal cek rilis superfile"; return 1; }
+    cur=$(/usr/local/bin/spf --version 2>/dev/null | awk '{print $NF}')
+    [ "$cur" = "$latest" ] && { echo "sudah terbaru ($cur)"; return 0; }
+    tmp=$(mktemp -d)
+    if curl -fsSL -o "$tmp/spf.tgz" \
+         "https://github.com/yorukot/superfile/releases/download/$latest/superfile-linux-$latest-amd64.tar.gz" &&
+       tar xzf "$tmp/spf.tgz" -C "$tmp" 2>/dev/null &&
+       install -m 755 "$tmp/dist/superfile-linux-$latest-amd64/spf" /usr/local/bin/spf; then
+        echo "superfile ${cur:-?} → $latest"
+    else
+        echo "!! update superfile gagal, versi lama tetap dipakai"; rm -rf "$tmp"; return 1
+    fi
+    rm -rf "$tmp"
+}
+
+up_aro() {
+    # /opt/aro-src = clone dari dotfiles-aro.minimal (dibuild di tag ARO_REF,
+    # HEAD detached). Update = pindah ke HEAD branch default upstream.
+    echo "==> aro"
+    local src=/opt/aro-src old new
+    [ -d "$src/.git" ] && [ -d "$src/build" ] || { echo "!! $src belum ada (jalankan update.sh dulu)"; return 1; }
+    git -C "$src" fetch -q origin || { echo "!! gagal fetch"; return 1; }
+    old=$(git -C "$src" rev-parse HEAD)
+    new=$(git -C "$src" rev-parse refs/remotes/origin/HEAD 2>/dev/null) \
+        || { echo "!! origin/HEAD tidak dikenal"; return 1; }
+    [ "$old" = "$new" ] && { echo "sudah terbaru (${old:0:7})"; return 0; }
+    git -C "$src" log --oneline "$old..$new" | head -20
+    git -C "$src" checkout -q "$new" || { echo "!! checkout gagal"; return 1; }
+    if ninja -C "$src/build" && ninja -C "$src/build" install >/dev/null; then
+        rm -rf /usr/share/backgrounds/aro
+        echo "aro ${old:0:7} → ${new:0:7}. Aktif setelah reboot (Ctrl+Alt+Del → Reboot)."
+        echo ">> Catatan: versi ini di luar ARO_REF yang dikunci; update.sh tidak menimpanya"
+        echo "   kecuali dijalankan dengan UPDATE_ARO=1 (kembali ke ARO_REF)."
+    else
+        echo "!! build aro gagal, source dikembalikan ke ${old:0:7}; aro lama tetap dipakai"
+        git -C "$src" checkout -q "$old"
+        return 1
+    fi
+}
+
+rc=0
+for item in "$@"; do
+    echo
+    case $item in
+        system)     up_system     || rc=1 ;;
+        onlyoffice) up_onlyoffice || rc=1 ;;
+        superfile)  up_superfile  || rc=1 ;;
+        aro)        up_aro        || rc=1 ;;
+        *) echo "!! item tidak dikenal: $item (diabaikan)"; rc=1 ;;
+    esac
+done
+exit $rc
