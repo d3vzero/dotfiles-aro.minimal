@@ -1,4 +1,8 @@
-# ai -- llama.cpp backend Vulkan (jalan di GPU AMD lewat vulkan-radeon, tanpa ROCm)
+# ai -- Detectron2 (training). Paket `cuda` ditambah setup.sh hanya kalau
+# backend = cuda (beberapa GB). venv Python 3.12 dibuat lewat uv.
+base-devel
+git
 cmake
-vulkan-headers
-shaderc
+ninja
+uv
+nvtop                   # pantau GPU (NVIDIA & AMD)

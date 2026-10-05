@@ -1,7 +1,7 @@
 # dotfiles-aro.minimal
 
-Artix **dinit** + window manager **aro** untuk PC **full AMD** (CPU + GPU),
-minimal, tanpa AUR. Dari disk kosong sampai desktop jadi dalam 1 repo.
+Artix **dinit** + window manager **aro**, minimal, tanpa AUR. Satu core
+untuk dua jenis mesin: PC kantor (AMD) dan workstation AI (NVIDIA). Dari disk kosong sampai desktop jadi dalam 1 repo.
 
 **Panduan lengkap: [`docs/INSTALL.md`](docs/INSTALL.md)**
 
@@ -12,9 +12,10 @@ minimal, tanpa AUR. Dari disk kosong sampai desktop jadi dalam 1 repo.
 - `update.sh` — terapkan ulang di sistem yang jalan (`sudo`)
 - `lib/apply.sh` — fungsi bersama kedua script
 - `core/` — paket, script, dan template home user umum
+- `profiles/office/` — OnlyOffice, font kompatibel Office, zathura
+- `profiles/cad/` — FreeCAD, KiCad
 - `profiles/daily/` — Steam, OBS, Proton-GE, Sung (pemutar musik)
-- `profiles/work/` — FreeCAD, KiCad, OnlyOffice
-- `profiles/ai/` — llama.cpp (Vulkan)
+- `profiles/ai/` — Detectron2 (training, CUDA / CPU) + `train-run`
 - `tools/` — alat uji (stress test aro)
 
 ## Ringkas

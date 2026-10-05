@@ -1,13 +1,11 @@
 # core -- dipakai semua profil. Satu paket per baris, '#' = komentar.
-# amd-ucode ditambah otomatis kalau bukan VM; openssh kalau ENABLE_SSH=yes.
+# Ditambah otomatis: <CPU>-ucode (kecuali GPU=vm), paket GPU, openssh (ENABLE_SSH=yes).
 
 # jaringan
 networkmanager
 networkmanager-dinit
 
-# grafis AMD
-mesa
-vulkan-radeon
+# grafis: dipilih otomatis dari GPU / GPU_GEN di config (lib/apply.sh)
 
 # audio (pipewire-jack eksplisit: hindari prompt provider "jack")
 pipewire
@@ -31,9 +29,7 @@ polkit
 udisks2
 udiskie
 
-# dokumen
-zathura
-zathura-pdf-mupdf
+# editor teks
 mousepad
 
 # arsip
@@ -42,17 +38,14 @@ unzip
 7zip
 unrar
 
-# font (kompatibel Office)
+# font dasar (font kompatibel Office ada di profil office)
 noto-fonts
-ttf-liberation
-ttf-carlito
-ttf-caladea
 
 # aplikasi
 firefox
-fuse2
 
 # build aro + tool script
+git
 meson
 ninja
 wayland

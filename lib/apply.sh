@@ -1,6 +1,8 @@
 # lib/apply.sh -- fungsi bersama, di-source oleh bootstrap/install-chroot.sh
 # dan update.sh. Semua jalan sebagai ROOT (tidak ada AUR, jadi tidak perlu
 # makepkg sebagai user biasa). Home PUBLIC_USER ditulis root lalu di-chown.
+# Hardware dipilih lewat config (CPU / GPU / GPU_GEN), divalidasi terhadap
+# deteksi sysfs -- tidak pernah diganti diam-diam.
 #
 # Catatan set -e: pakai "if ...; then" -- JANGAN "[ x ] && cmd" sebagai
 # baris terakhir fungsi (kalau x salah, fungsi return 1 -> script berhenti).
@@ -23,18 +25,124 @@ load_conf() {
     . "$1"
     PUBLIC_HOME="/home/$PUBLIC_USER"
     SUNG_REV="${SUNG_REV:-4918f76}"
-    export REPO_DIR PUBLIC_USER PUBLIC_HOME ADMIN_USER IS_VM SUNG_REV
+
+    # --- kompatibilitas config lama ---
+    if has_profile work; then
+        PROFILES="$(echo " $PROFILES " | sed 's/ work / office cad /; s/^ *//; s/ *$//')"
+        warn "Profil 'work' sudah dipecah jadi 'office cad' -- ganti PROFILES di $1"
+    fi
+    CPU="${CPU:-amd}"
+    if [ -z "${GPU:-}" ]; then
+        case "${IS_VM:-auto}" in
+            yes) GPU=vm ;;
+            no)  GPU=amd ;;
+            *)   if [[ " $(detect_gpus) " == *" vm "* ]]; then GPU=vm; else GPU=amd; fi ;;
+        esac
+        warn "GPU belum diisi di $1 -- sementara dipakai GPU=$GPU. Tambahkan GPU= (lihat machine.conf)."
+    fi
+    GPU_GEN="${GPU_GEN:-new}"
+    AI_BACKEND="${AI_BACKEND:-auto}"
+
+    case "$CPU" in amd|intel) ;; *) die "CPU='$CPU' tidak valid (amd | intel)" ;; esac
+    case "$GPU" in amd|nvidia|intel|vm) ;; *) die "GPU='$GPU' tidak valid (amd | nvidia | intel | vm)" ;; esac
+    case "$GPU_GEN" in new|old) ;; *) die "GPU_GEN='$GPU_GEN' tidak valid (new | old)" ;; esac
+    # GPU lama hanya didukung untuk Intel. AMD GCN1/2 & NVIDIA Maxwell/Pascal
+    # sengaja tidak didukung (butuh param kernel khusus / driver AUR).
+    if [ "$GPU_GEN" = old ] && [ "$GPU" != intel ]; then
+        die "GPU_GEN=old hanya untuk GPU=intel. GPU $GPU lama (AMD GCN1/2, NVIDIA GTX 9xx/10xx) tidak didukung."
+    fi
+
+    AI_BACKEND_RESOLVED="$(resolve_ai_backend)"
+    export REPO_DIR PUBLIC_USER PUBLIC_HOME ADMIN_USER SUNG_REV CPU GPU GPU_GEN \
+           AI_BACKEND_RESOLVED D2_REV TORCH_INDEX TORCH_CUDA_ARCH
 }
 
 has_profile() { [[ " $PROFILES " == *" $1 "* ]]; }
 
-detect_vm() {
-    if [ "$IS_VM" = "auto" ]; then
-        local v
-        v="$(cat /sys/class/dmi/id/sys_vendor /sys/class/dmi/id/product_name 2>/dev/null || true)"
-        if grep -qiE 'qemu|kvm|virtualbox|vmware|bochs' <<<"$v"; then IS_VM=yes; else IS_VM=no; fi
+# ---------- hardware ----------
+detect_cpu() {   # amd | intel | unknown
+    case "$(awk -F': ' '/^vendor_id/ { print $2; exit }' /proc/cpuinfo)" in
+        AuthenticAMD) echo amd ;; GenuineIntel) echo intel ;; *) echo unknown ;;
+    esac
+}
+
+detect_gpus() {  # vendor semua GPU (kelas PCI 0x03xxxx), dari sysfs -- tanpa lspci
+    local d v out=""
+    for d in /sys/bus/pci/devices/*; do
+        case "$(cat "$d/class" 2>/dev/null)" in 0x03*) ;; *) continue ;; esac
+        v="$(cat "$d/vendor")"
+        case "$v" in
+            0x1002) out+=" amd" ;; 0x10de) out+=" nvidia" ;; 0x8086) out+=" intel" ;;
+            0x1af4|0x1234|0x1b36|0x15ad|0x80ee) out+=" vm" ;;
+            *) out+=" lain($v)" ;;
+        esac
+    done
+    echo "$out" | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//'
+}
+
+# Peringatan + konfirmasi kalau config tidak cocok dengan hardware.
+validate_hw() {
+    local dc dg problems=()
+    dc="$(detect_cpu)"; dg="$(detect_gpus)"
+    echo "    config   : CPU=$CPU  GPU=$GPU  GPU_GEN=$GPU_GEN  AI=$AI_BACKEND_RESOLVED"
+    echo "    terdeteksi: CPU=$dc  GPU=[${dg:-tidak ada}]"
+    echo "    PROFILES=\"$PROFILES\""
+    if [ "$GPU" != "vm" ] && [ "$dc" != "$CPU" ]; then
+        problems+=("CPU=$CPU, tapi CPU terdeteksi: $dc")
     fi
-    echo "    IS_VM=$IS_VM  PROFILES=\"$PROFILES\""
+    if [[ " $dg " != *" $GPU "* ]]; then
+        problems+=("GPU=$GPU, tapi GPU terdeteksi: ${dg:-tidak ada}")
+    fi
+    if [ "${#problems[@]}" -eq 0 ]; then return 0; fi
+    local p; for p in "${problems[@]}"; do warn "$p"; done
+    if [ ! -t 0 ]; then die "Config tidak cocok dengan hardware (non-interaktif, dibatalkan)."; fi
+    local a; read -rp "Tetap lanjut dengan setting config? [y/N] " a
+    case "$a" in y|Y) ;; *) die "Dibatalkan. Perbaiki CPU/GPU di config." ;; esac
+}
+
+resolve_ai_backend() {   # cuda | cpu
+    case "$AI_BACKEND" in
+        auto)
+            if [ "$GPU" = nvidia ]; then echo cuda; else echo cpu; fi ;;
+        cuda)
+            if [ "$GPU" != nvidia ]; then
+                warn "AI_BACKEND=cuda butuh GPU=nvidia -- dipakai cpu"; echo cpu
+            else echo cuda; fi ;;
+        rocm)
+            warn "AI_BACKEND=rocm belum didukung skrip ini -- dipakai cpu"; echo cpu ;;
+        cpu) echo cpu ;;
+        *) die "AI_BACKEND='$AI_BACKEND' tidak valid (auto | cuda | rocm | cpu)" ;;
+    esac
+}
+
+gpu_packages() {
+    case "$GPU" in
+        vm)  echo mesa ;;
+        amd) echo mesa vulkan-radeon ;;
+        intel)
+            if [ "$GPU_GEN" = new ]; then echo mesa vulkan-intel intel-media-driver
+            else echo mesa vulkan-intel libva-intel-driver; fi ;;
+        nvidia)
+            # Turing+ (GTX 16xx / RTX 20xx ke atas). Artix: WAJIB -dkms (kernel
+            # Artix beda build dari Arch). RTX 50xx hanya didukung open module.
+            echo nvidia-open-dkms nvidia-utils libva-nvidia-driver egl-wayland ;;
+    esac
+    # 32-bit untuk Steam (profil daily)
+    if has_profile daily; then
+        case "$GPU" in
+            vm) echo lib32-mesa ;;
+            amd) echo lib32-mesa lib32-vulkan-radeon ;;
+            intel) echo lib32-mesa lib32-vulkan-intel ;;
+            nvidia) echo lib32-nvidia-utils ;;
+        esac
+    fi
+}
+
+gpu_kernel_params() {
+    case "$GPU" in
+        nvidia) echo "nvidia_drm.modeset=1 nvidia_drm.fbdev=1" ;;
+        *)      echo "" ;;
+    esac
 }
 
 # Baca daftar paket: satu paket per baris, '#' = komentar, baris kosong diabaikan
@@ -73,7 +181,9 @@ install_packages() {
     done
     local pkgs
     mapfile -t pkgs < <(pkg_list "${files[@]}")
-    if [ "$IS_VM" != "yes" ]; then pkgs+=(amd-ucode); fi
+    if [ "$GPU" != "vm" ]; then pkgs+=("${CPU}-ucode"); fi
+    # shellcheck disable=SC2207
+    pkgs+=($(gpu_packages))
     if [ "$ENABLE_SSH" = "yes" ]; then pkgs+=(openssh openssh-dinit); fi
     pacman -S --needed --noconfirm "${pkgs[@]}"
 }
@@ -183,7 +293,7 @@ setup_public_home() {
         # fuzzel lewat Exec= tanpa path lengkap. Titik dua jangan sampai hilang.
         echo 'export PATH="$HOME/.local/bin:$PATH"'
         echo 'if [ -z "$WAYLAND_DISPLAY" ] && [ "$(tty)" = /dev/tty1 ]; then'
-        if [ "$IS_VM" = "yes" ]; then
+        if [ "$GPU" = "vm" ]; then
             echo '  export WLR_NO_HARDWARE_CURSORS=1   # VM (virtio-gpu): kursor meleset tanpa ini'
             echo '  ulimit -c unlimited                # VM uji: simpan core dump'
         fi
@@ -235,4 +345,44 @@ setup_public_home() {
     done < <(pkg_list "$REPO_DIR/core/hidden-apps.txt")
 
     chown -R "$PUBLIC_USER:$PUBLIC_USER" "$H"
+}
+
+# EFISTUB: entry dibuat ulang hanya kalau cmdline berubah (CPU/GPU/root)
+# atau entry hilang. Dipakai bootstrap DAN update.sh.
+setup_efistub() {
+    local esp_src esp_disk esp_part root_src root_uuid ucode params cmdline
+    [ "$(findmnt -no FSTYPE /boot 2>/dev/null)" = "vfat" ] || die "/boot bukan partisi EFI (vfat)"
+    esp_src="$(findmnt -no SOURCE /boot)"
+    esp_disk="/dev/$(lsblk -no PKNAME "$esp_src")"
+    esp_part="$(cat "/sys/class/block/$(basename "$esp_src")/partition")"
+    root_src="$(findmnt -no SOURCE /)"; root_src="${root_src%%\[*}"
+    root_uuid="$(blkid -s UUID -o value "$root_src")"
+    [ -n "$root_uuid" ] || die "UUID root tidak terbaca dari $root_src"
+    [ -f /boot/vmlinuz-linux ] || die "/boot/vmlinuz-linux tidak ada"
+
+    ucode=""
+    if [ "$GPU" != "vm" ]; then
+        [ -f "/boot/${CPU}-ucode.img" ] || die "/boot/${CPU}-ucode.img tidak ada (paket ${CPU}-ucode?)"
+        ucode="initrd=\\${CPU}-ucode.img "
+    fi
+    params="$(gpu_kernel_params)"
+    cmdline="root=UUID=$root_uuid rw ${ucode}initrd=\\initramfs-linux.img ${params:+$params }quiet"
+    echo "    disk=$esp_disk part=$esp_part"
+    echo "    cmdline: $cmdline"
+
+    local exists=no num
+    if efibootmgr | grep -qE "^Boot[0-9A-Fa-f]{4}\*? ${EFI_LABEL}([[:space:]]|$)"; then exists=yes; fi
+    if [ "$exists" = yes ] && [ "$(cat "$STATE_DIR/efistub.cmdline" 2>/dev/null)" = "$cmdline" ]; then
+        echo "    entry '$EFI_LABEL' tidak berubah -- skip"
+        return 0
+    fi
+    # Entry lama berlabel sama dihapus dulu: GUID partisi / cmdline bisa berubah.
+    for num in $(efibootmgr | sed -nE "s/^Boot([0-9A-Fa-f]{4})\*? ${EFI_LABEL}([[:space:]].*)?$/\1/p"); do
+        echo "    hapus entry lama Boot$num ($EFI_LABEL)"
+        efibootmgr -q -b "$num" -B
+    done
+    efibootmgr --create --disk "$esp_disk" --part "$esp_part" --label "$EFI_LABEL" \
+        --loader /vmlinuz-linux --unicode "$cmdline"
+    mkdir -p "$STATE_DIR"
+    echo "$cmdline" > "$STATE_DIR/efistub.cmdline"
 }

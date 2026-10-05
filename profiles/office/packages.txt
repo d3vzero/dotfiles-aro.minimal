@@ -1,0 +1,7 @@
+# office -- OnlyOffice (AppImage di setup.sh) + font & viewer dokumen
+fuse2                   # menjalankan AppImage
+ttf-liberation          # metrik Arial / Times / Courier
+ttf-carlito             # metrik Calibri
+ttf-caladea             # metrik Cambria
+zathura
+zathura-pdf-mupdf

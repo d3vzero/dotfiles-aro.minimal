@@ -1,0 +1,39 @@
+#!/bin/bash
+# train-run — jalankan training terlepas dari terminal (aman walau kitty ditutup)
+#   train-run start <nama> <perintah...>   mulai job, log ke ~/training/<nama>/train.log
+#   train-run status                       daftar job yang masih berjalan
+#   train-run log <nama>                   ikuti log (Ctrl+C hanya berhenti melihat)
+#   train-run stop <nama>                  hentikan job (TERM, lalu KILL setelah 30 dtk)
+#   train-run count                        jumlah job berjalan (dipakai powermenu)
+BASE="$HOME/training"
+alive() { [ -f "$1/pid" ] && kill -0 "$(cat "$1/pid")" 2>/dev/null; }
+
+case "${1:-}" in
+start)
+    name=${2:?nama job}; shift 2; [ $# -gt 0 ] || { echo "perintah kosong"; exit 1; }
+    d="$BASE/$name"; mkdir -p "$d"
+    alive "$d" && { echo "job '$name' masih berjalan"; exit 1; }
+    printf '%q ' "$@" > "$d/cmd"; date '+%F %T' > "$d/start"; rm -f "$d/exit"
+    setsid bash -c '
+        d=$1; shift
+        trap "stopped=1" TERM     # wrapper bertahan untuk mencatat kode keluar; anak tetap kena TERM
+        "$@" >> "$d/train.log" 2>&1; rc=$?
+        echo "$rc" > "$d/exit"; rm -f "$d/pid"
+        if [ "$rc" = 0 ]; then notify-send -a Training "Training selesai" "$(basename "$d")"
+        else notify-send -a Training -u critical "Training berhenti (kode $rc)" "$(basename "$d") — cek train.log"; fi
+    ' _ "$d" "$@" < /dev/null > /dev/null 2>&1 &
+    echo $! > "$d/pid"
+    echo "job '$name' berjalan (pid $!). Log: train-run log $name" ;;
+status)
+    for d in "$BASE"/*/; do d=${d%/}; [ -d "$d" ] || continue
+        if alive "$d"; then echo "BERJALAN  $(basename "$d")  sejak $(cat "$d/start")"
+        elif [ -f "$d/exit" ]; then echo "selesai   $(basename "$d")  kode $(cat "$d/exit")"; fi
+    done ;;
+log)  tail -n 50 -f "$BASE/${2:?nama job}/train.log" ;;
+stop) d="$BASE/${2:?nama job}"; alive "$d" || { echo "tidak berjalan"; exit 1; }
+      pg=$(cat "$d/pid"); kill -TERM -- "-$pg" && echo "menghentikan '$2'…"
+      for _ in $(seq 30); do alive "$d" || { echo "berhenti."; exit 0; }; sleep 1; done
+      kill -KILL -- "-$pg" 2>/dev/null; echo "dipaksa berhenti (KILL)." ;;
+count) n=0; for d in "$BASE"/*/; do alive "${d%/}" && n=$((n+1)); done; echo "$n" ;;
+*) sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac

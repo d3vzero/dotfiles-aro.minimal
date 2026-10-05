@@ -1,7 +1,5 @@
 # daily -- gaming + rekam + musik (Steam butuh [multilib], diaktifkan otomatis)
-steam
-lib32-mesa
-lib32-vulkan-radeon
+steam                   # driver 32-bit ditambah otomatis sesuai GPU
 obs-studio
 
 # Sung (pemutar YouTube Music / file lokal / Navidrome) -- build per-user

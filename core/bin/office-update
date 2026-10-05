@@ -74,7 +74,7 @@ status() {
             [ -n "$latest" ] || { echo "ERR|gagal cek"; return; }
             [ "$cur" = "$latest" ] && echo "OK|$cur" || echo "NEED|$cur → $latest" ;;
         onlyoffice)
-            [ -x /opt/onlyoffice/OnlyOffice.AppImage ] || { echo "SKIP|tidak terpasang (profil work)"; return; }
+            [ -x /opt/onlyoffice/OnlyOffice.AppImage ] || { echo "SKIP|tidak terpasang (profil office)"; return; }
             cur=$(cat /opt/onlyoffice/VERSION 2>/dev/null || echo "?")
             latest=$(gh_latest ONLYOFFICE/DesktopEditors)
             [ -n "$latest" ] || { echo "ERR|gagal cek"; return; }
@@ -108,6 +108,14 @@ check_all() {
 st()   { cut -d'|' -f1 "$TMPST/$1"; }
 sttx() { cut -d'|' -f2- "$TMPST/$1"; }
 mark() { case $(st "$1") in NEED) echo "●";; OK) echo "✓";; SKIP) echo "–";; *) echo "?";; esac; }
+
+gpu_busy() {   # ada job train-run atau proses compute di GPU NVIDIA?
+    local j=0 g=0
+    command -v train-run >/dev/null && j=$(train-run count 2>/dev/null || echo 0)
+    command -v nvidia-smi >/dev/null &&
+        g=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | grep -c .)
+    [ "$j" -gt 0 ] || [ "$g" -gt 0 ]
+}
 
 notify() { command -v notify-send >/dev/null && notify-send -a Update "$@"; }
 
@@ -195,6 +203,15 @@ cmd_run() {
     for i in "$@"; do
         case " $ROOT_ITEMS " in *" $i "*) root+=("$i") ;; *) user+=("$i") ;; esac
     done
+    # workstation AI: jangan update sistem diam-diam saat training jalan
+    case " ${root[*]} " in *" system "*)
+        if gpu_busy; then
+            echo "⚠ Training/GPU sedang berjalan. Update sistem bisa memperbarui"
+            echo "  driver NVIDIA/CUDA dan membuat training crash."
+            read -rp "Tetap lanjut? [y/N] " a
+            case $a in y|Y) ;; *) echo "Dibatalkan."; read -rp "Tekan Enter untuk menutup…" _; exit 0 ;; esac
+        fi ;;
+    esac
     echo "=== Update: $* ==="
     if [ ${#root[@]} -gt 0 ]; then
         echo

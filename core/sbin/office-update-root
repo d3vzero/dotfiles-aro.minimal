@@ -24,7 +24,7 @@ up_system() {
 up_onlyoffice() {
     echo "==> OnlyOffice"
     local dir=/opt/onlyoffice latest cur
-    [ -x "$dir/OnlyOffice.AppImage" ] || { echo "tidak terpasang (profil work) -- skip"; return 0; }
+    [ -x "$dir/OnlyOffice.AppImage" ] || { echo "tidak terpasang (profil office) -- skip"; return 0; }
     latest=$(gh_latest ONLYOFFICE/DesktopEditors)
     [ -n "$latest" ] || { echo "!! gagal cek rilis OnlyOffice"; return 1; }
     cur=$(cat "$dir/VERSION" 2>/dev/null || echo "?")

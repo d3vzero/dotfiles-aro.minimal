@@ -1,5 +1,5 @@
 #!/bin/bash
-# profil work: OnlyOffice AppImage resmi (~600 MB, butuh fuse2 dari core)
+# profil office: OnlyOffice AppImage resmi (~600 MB, butuh fuse2)
 set -euo pipefail
 OO=/opt/onlyoffice/OnlyOffice.AppImage
 URL="https://github.com/ONLYOFFICE/DesktopEditors/releases/latest/download/DesktopEditors-x86_64.AppImage"

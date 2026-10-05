@@ -2,7 +2,7 @@
 # bootstrap/install-chroot.sh -- instalasi penuh dotfiles-aro.minimal.
 # Jalan SEKALI di dalam `artix-chroot /mnt` sebagai root, dari repo yang
 # sudah di-clone ke /opt/dotfiles-aro.minimal (lihat docs/INSTALL.md).
-# Target: Artix dinit, CPU + GPU AMD, EFISTUB (tanpa GRUB), tanpa AUR.
+# Target: Artix dinit, EFISTUB (tanpa GRUB), tanpa AUR. CPU/GPU dari config.
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -26,8 +26,8 @@ if [ ! -f "$CONF" ]; then
 fi
 load_conf "$CONF"
 
-step "[1/10] Deteksi mesin"
-detect_vm
+step "[1/10] Cek hardware vs config"
+validate_hw
 
 step "[2/10] Zona waktu, locale, hostname"
 ln -sf "/usr/share/zoneinfo/$TIMEZONE" /etc/localtime
@@ -74,29 +74,7 @@ step "[9/10] Home $PUBLIC_USER"
 setup_public_home
 
 step "[10/10] EFISTUB"
-ESP_SRC="$(findmnt -no SOURCE /boot)"
-ESP_DISK="/dev/$(lsblk -no PKNAME "$ESP_SRC")"
-ESP_PART="$(cat "/sys/class/block/$(basename "$ESP_SRC")/partition")"
-ROOT_SRC="$(findmnt -no SOURCE /)"
-ROOT_SRC="${ROOT_SRC%%\[*}"
-ROOT_UUID="$(blkid -s UUID -o value "$ROOT_SRC")"
-[ -n "$ROOT_UUID" ] || die "UUID root tidak terbaca dari $ROOT_SRC"
-[ -f /boot/vmlinuz-linux ] || die "/boot/vmlinuz-linux tidak ada"
-
-INITRD=""
-if [ "$IS_VM" != "yes" ]; then INITRD='initrd=\amd-ucode.img '; fi
-CMDLINE="root=UUID=$ROOT_UUID rw ${INITRD}initrd=\\initramfs-linux.img quiet"
-echo "    disk=$ESP_DISK part=$ESP_PART"
-echo "    cmdline: $CMDLINE"
-
-# Entry lama berlabel sama dihapus dulu: setelah partisi ulang, GUID partisi
-# berubah, jadi entry lama menunjuk ke partisi yang sudah tidak ada.
-for num in $(efibootmgr | sed -nE "s/^Boot([0-9A-Fa-f]{4})\*? ${EFI_LABEL}([[:space:]].*)?$/\1/p"); do
-    echo "    hapus entry lama Boot$num ($EFI_LABEL)"
-    efibootmgr -q -b "$num" -B
-done
-efibootmgr --create --disk "$ESP_DISK" --part "$ESP_PART" --label "$EFI_LABEL" \
-    --loader /vmlinuz-linux --unicode "$CMDLINE"
+setup_efistub
 
 echo
 echo "==> SELESAI bootstrap."

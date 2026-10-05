@@ -1,6 +1,16 @@
 #!/bin/sh
-# Ctrl+Alt+Del -> menu Shutdown/Reboot (loginctl, tanpa password)
-case "$(printf 'Shutdown\nReboot\n' | fuzzel --dmenu --prompt 'Power: ')" in
-  Shutdown) loginctl poweroff ;;
-  Reboot)   loginctl reboot ;;
+# powermenu — Ctrl+Alt+Del; peringatan kalau training/GPU sedang dipakai
+jobs=0; gpu=0
+command -v train-run >/dev/null && jobs=$(train-run count 2>/dev/null || echo 0)
+command -v nvidia-smi >/dev/null &&
+    gpu=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | grep -c .)
+if [ "$jobs" -gt 0 ] || [ "$gpu" -gt 0 ]; then
+    sel=$(printf 'Batal\nShutdown (training akan berhenti)\nReboot (training akan berhenti)\n' |
+          fuzzel --dmenu --prompt "⚠ Training/GPU sedang berjalan ($jobs job, $gpu proses GPU): ")
+else
+    sel=$(printf 'Shutdown\nReboot\n' | fuzzel --dmenu --prompt 'Power: ')
+fi
+case "$sel" in
+    Shutdown*) loginctl poweroff ;;
+    Reboot*)   loginctl reboot ;;
 esac

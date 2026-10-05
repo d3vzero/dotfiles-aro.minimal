@@ -1,5 +1,9 @@
 #!/bin/bash
-# aro-stress — uji ketahanan compositor aro lewat aroctl (tanpa paket tambahan)
+# aro-stress v2 — uji ketahanan compositor aro lewat aroctl (tanpa paket tambahan)
+#
+# Baru di v2: info sistem/GPU, metrik GPU per menit (NVIDIA via nvidia-smi,
+# AMD via sysfs), beban GPU paralel opsional (GPU_LOAD_CMD, mis. inference
+# Detectron2), aksi multi-monitor otomatis, cek error GPU & log aro di akhir.
 #
 # Pakai (dari kitty, sebagai user yang login di aro):
 #   setsid -f ~/.local/bin/aro-stress 8 >/dev/null 2>&1     # 8 jam, jalan di latar
@@ -10,6 +14,10 @@
 #   FREECAD_FILE=~/uji/part.FCStd KICAD_FILE=~/uji/board.kicad_pro \
 #   PDF_FILE=~/uji/doc.pdf OFFICE_FILE=~/uji/lap.docx \
 #   setsid -f ~/.local/bin/aro-stress 8 >/dev/null 2>&1
+#
+# Beban GPU paralel (opsional) — perintah dijalankan berulang selama tes:
+#   GPU_LOAD_CMD="/opt/detectron2/venv/bin/python /opt/dotfiles-aro.minimal/tools/d2-infer-load.py $HOME/uji/gambar 20" \
+#   setsid -f ~/.local/bin/aro-stress 8 >/dev/null 2>&1
 
 HOURS=${1:-8}
 MAXWIN=${MAXWIN:-10}            # batas jumlah window sebelum mulai menutup
@@ -18,6 +26,8 @@ KICAD_FILE=${KICAD_FILE:-}
 PDF_FILE=${PDF_FILE:-}
 OFFICE_FILE=${OFFICE_FILE:-}
 OFFICE_BIN=/opt/onlyoffice/OnlyOffice.AppImage
+GPU_LOAD_CMD=${GPU_LOAD_CMD:-}
+GPU_LOAD_PAUSE=${GPU_LOAD_PAUSE:-5}   # jeda antar run beban GPU (detik)
 
 BASE="$HOME/aro-stress"
 RUN="$BASE/$(date +%Y%m%d-%H%M%S)"
@@ -25,6 +35,8 @@ ACT="$RUN/actions.log"
 MET="$RUN/metrics.csv"
 EVT="$RUN/events.log"
 SUM="$RUN/summary.txt"
+SYS="$RUN/system.txt"
+GPL="$RUN/gpuload.log"
 LOGDIR="${XDG_STATE_HOME:-$HOME/.local/state}/aro"
 RT="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 UIDN=$(id -u)
@@ -42,6 +54,69 @@ wins()   { ctl windows 2>/dev/null | awk 'NR>1' ; }
 nwins()  { wins | wc -l; }
 rssmb()  { local p=$1; [ -n "$p" ] || { echo 0; return; }
            echo $(( $(ps -o rss= -p "$p" 2>/dev/null || echo 0) / 1024 )); }
+
+nmon()   { ctl -j monitors 2>/dev/null | grep -o '"name"' | wc -l; }
+
+# deteksi GPU sekali: nvidia | amd | none
+gpu_kind() {
+    if command -v nvidia-smi >/dev/null && nvidia-smi -L >/dev/null 2>&1; then echo nvidia
+    elif ls /sys/class/drm/card*/device/gpu_busy_percent >/dev/null 2>&1; then echo amd
+    else echo none; fi
+}
+AMD_DEV=""
+amd_dev() { [ -n "$AMD_DEV" ] || AMD_DEV=$(dirname "$(ls /sys/class/drm/card*/device/gpu_busy_percent 2>/dev/null | head -1)"); echo "$AMD_DEV"; }
+
+# cetak "vram_mb,util_pct,temp_c" (kosong kalau tidak tersedia)
+gpu_metrics() {
+    case $GPUK in
+        nvidia)
+            nvidia-smi --query-gpu=memory.used,utilization.gpu,temperature.gpu \
+                --format=csv,noheader,nounits -i 0 2>/dev/null | tr -d ' ' ;;
+        amd)
+            local d v u t; d=$(amd_dev)
+            v=$(( $(cat "$d/mem_info_vram_used" 2>/dev/null || echo 0) / 1048576 ))
+            u=$(cat "$d/gpu_busy_percent" 2>/dev/null)
+            t=$(cat "$d"/hwmon/hwmon*/temp1_input 2>/dev/null | head -1)
+            [ -n "$t" ] && t=$((t/1000))
+            echo "$v,$u,$t" ;;
+        *) echo ",," ;;
+    esac
+}
+
+system_info() {
+    {
+        echo "Host     : $(cat /etc/hostname 2>/dev/null)"
+        echo "Kernel   : $(uname -r)"
+        echo "CPU      : $(awk -F': ' '/model name/{print $2; exit}' /proc/cpuinfo)"
+        echo "RAM      : $(free -h | awk '/^Mem:/{print $2}')"
+        echo "GPU      :"; lspci 2>/dev/null | grep -E 'VGA|3D|Display' | sed 's/^/  /'
+        if [ "$GPUK" = nvidia ]; then
+            echo "NVIDIA   : $(nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader -i 0 2>/dev/null)"
+        fi
+        echo "aro      : $(ctl version 2>/dev/null | head -1)"
+        echo "Monitor  : $(nmon)"
+        ctl monitors 2>/dev/null | sed 's/^/  /'
+        echo "Env      : WLR_RENDERER=${WLR_RENDERER:-(default)} WLR_NO_HARDWARE_CURSORS=${WLR_NO_HARDWARE_CURSORS:-}"
+        echo "GPU load : ${GPU_LOAD_CMD:-(tidak ada)}"
+    } > "$SYS"
+}
+
+GLPID=""
+start_gpu_load() {
+    [ -n "$GPU_LOAD_CMD" ] || return 0
+    (
+        n=0
+        while [ ! -f "$BASE/STOP" ]; do
+            n=$((n+1)); t0=$(date +%s)
+            bash -c "$GPU_LOAD_CMD" > "$RUN/gpuload-last.out" 2>&1; rc=$?
+            echo "$(date '+%F_%T') run=$n rc=$rc durasi=$(( $(date +%s)-t0 ))s" >> "$GPL"
+            [ $rc -ne 0 ] && cp "$RUN/gpuload-last.out" "$RUN/gpuload-fail-$n.out"
+            sleep "$GPU_LOAD_PAUSE"
+        done
+    ) &
+    GLPID=$!
+    log "beban GPU dimulai: $GPU_LOAD_CMD"
+}
 
 SUBPID=""
 start_sub() {
@@ -107,6 +182,7 @@ random_action() {
     elif (( r < 93 )); then do_act maximize
     elif (( r < 94 )); then do_act width next
     elif (( r < 95 )); then ctl reload >/dev/null 2>&1; log "reload"
+    elif (( r < 97 )) && (( NMON > 1 )); then do_act move_workspace "$d"
     else                    do_act close
     fi
 }
@@ -164,6 +240,7 @@ check_hang() {
     cp "$RUN/last-windows.txt" "$d/window-terakhir.txt" 2>/dev/null
     cp "$LOGDIR/aro.log" "$d/aro.log" 2>/dev/null
     ps -o pid,stat,wchan:30,rss,etime,cmd -p "$CUR" > "$d/status-proses.txt" 2>/dev/null
+    echo "gpu (vram,util,temp): $(gpu_metrics)" >> "$d/status-proses.txt"
     # tunggu sampai aro menjawab lagi atau crash
     while ! ctl version >/dev/null 2>&1 && [ "$(aropid)" = "$CUR" ]; do
         [ -f "$BASE/STOP" ] && break
@@ -177,12 +254,13 @@ metrics() {
     xw=$(pgrep -x -u "$UIDN" Xwayland | head -1); xrss=$(rssmb "$xw")
     mem=$(free -m | awk '/^Mem:/{print $3}')
     nw=$(nwins)
-    echo "$(date +%T),$(( (now-START)/60 )),$CUR,$rss,$xrss,$mem,$nw,$CRASHES,$HANGS,$ACTIONS" >> "$MET"
+    echo "$(date +%T),$(( (now-START)/60 )),$CUR,$rss,$xrss,$mem,$(gpu_metrics),$nw,$CRASHES,$HANGS,$ACTIONS" >> "$MET"
     snapshot
 }
 
 finish() {
     [ -n "$SUBPID" ] && kill "$SUBPID" 2>/dev/null
+    [ -n "$GLPID" ] && { touch "$BASE/STOP"; kill "$GLPID" 2>/dev/null; }
     pkill -u "$UIDN" -f "aroctl.*subscribe" 2>/dev/null
     local dur=$(( ($(date +%s) - START) / 60 ))
     {
@@ -194,11 +272,26 @@ finish() {
         echo "Aksi gagal   : $(grep -c ' GAGAL: ' "$ACT")"
         echo "Crash aro    : $CRASHES  (detail: $RUN/crash/)"
         echo "Hang aro     : $HANGS  (detail: $RUN/hang/)"
-        awk -F, 'NR>1{ if(min==""||$4<min)min=$4; if($4>max)max=$4; last=$4;
-                       if($5>xmax)xmax=$5; if($6>mmax)mmax=$6 }
+        awk -F, 'NR>1{ if($4>max)max=$4; last=$4;
+                       if($5>xmax)xmax=$5; if($6>mmax)mmax=$6;
+                       if($7>vmax)vmax=$7; if($8>umax)umax=$8; if($9>tmax)tmax=$9 }
                  END{ printf "RSS aro      : awal %s MB, akhir %s MB, puncak %s MB\n", first, last, max;
                       printf "RSS Xwayland : puncak %s MB\n", xmax;
-                      printf "RAM terpakai : puncak %s MB\n", mmax }' first="$RSS0" "$MET"
+                      printf "RAM terpakai : puncak %s MB\n", mmax;
+                      printf "GPU          : VRAM puncak %s MB, util puncak %s%%, suhu puncak %s C\n", vmax, umax, tmax }' first="$RSS0" "$MET"
+        if [ -n "$GPU_LOAD_CMD" ]; then
+            echo "Beban GPU    : $(grep -c . "$GPL" 2>/dev/null) run, $(grep -vc ' rc=0 ' "$GPL" 2>/dev/null) gagal (detail: $GPL)"
+        fi
+        echo "Error di log aro (sesi ini): $(grep -ciE 'error|fail' "$LOGDIR/aro.log" 2>/dev/null)"
+        echo
+        echo "Error GPU di kernel:"
+        if k=$(dmesg 2>/dev/null); then
+            printf '%s\n' "$k" | grep -iE 'NVRM: Xid|amdgpu.*(timeout|reset|fault)|GPU HANG|segfault' | tail -20
+            echo "(selesai cek dmesg)"
+        else
+            echo "  dmesg butuh root. Jalankan sebagai Admin:"
+            echo "  sudo dmesg | grep -iE 'NVRM: Xid|amdgpu.*(timeout|reset|fault)|GPU HANG|segfault|oom'"
+        fi
         echo
         echo "Aksi terbanyak:"
         grep -v -e 'GAGAL' -e '===' "$ACT" | awk '{print $2}' | sort | uniq -c | sort -rn | head -10
@@ -211,15 +304,19 @@ command -v aroctl >/dev/null || { echo "aroctl tidak ditemukan"; exit 1; }
 CUR=$(aropid)
 [ -n "$CUR" ] && ctl version >/dev/null 2>&1 || { echo "aro tidak berjalan / socket tidak ditemukan"; exit 1; }
 
+GPUK=$(gpu_kind)
+NMON=$(nmon)
+system_info
 START=$(date +%s); END=$((START + HOURS*3600))
 CRASHES=0; HANGS=0; ACTIONS=0; LASTMET=0
 RSS0=$(rssmb "$CUR")
-echo "time,menit,aro_pid,aro_rss_mb,xwayland_rss_mb,ram_used_mb,windows,crash,hang,aksi" > "$MET"
+echo "time,menit,aro_pid,aro_rss_mb,xwayland_rss_mb,ram_used_mb,gpu_vram_mb,gpu_util,gpu_temp,windows,crash,hang,aksi" > "$MET"
 trap 'finish; exit 0' INT TERM
 
-log "mulai: $HOURS jam, aro pid $CUR, versi $(ctl version 2>/dev/null | head -1)"
+log "mulai: $HOURS jam, aro pid $CUR, versi $(ctl version 2>/dev/null | head -1), gpu=$GPUK, monitor=$NMON"
 start_sub
 snapshot
+start_gpu_load
 
 while [ "$(date +%s)" -lt "$END" ] && [ ! -f "$BASE/STOP" ]; do
     now=$(date +%s)
