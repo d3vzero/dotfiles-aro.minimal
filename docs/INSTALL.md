@@ -127,6 +127,26 @@ Profil `daily` menambah driver 32-bit Steam yang sesuai GPU.
 - `GPU=vm`: tanpa microcode, plus `WLR_NO_HARDWARE_CURSORS=1` dan core dump
   aktif di `.bash_profile`.
 
+## 3b. tmpfs (kurangi tulis ke NVMe)
+
+Dipasang bootstrap dan `update.sh` lewat `core/setup-tmpfs.sh` (idempotent,
+cadangan `/etc/fstab.bak-tmpfs`), berlaku setelah reboot:
+
+| Lokasi | Ukuran (config) | Catatan |
+|---|---|---|
+| `/tmp` | `TMPFS_TMP_SIZE` (default `50%` RAM) | tanpa `noexec` (AppImage OnlyOffice mount di `/tmp`); dataset SH Trainer di-copy ke sini |
+| `~/.cache` user umum | `TMPFS_CACHE_SIZE` (default `2G`, AI: `4G`) | tanpa `noexec` (cache `.so` triton/torch) |
+| partisi ext4 | — | `relatime` → `noatime` |
+
+**Tidak** di RAM: checkpoint/output training, `~/.torch`, venv. Cache yang
+mahal dibuat ulang (shader Mesa/NVIDIA, matplotlib) diarahkan ke
+`~/.local/state/` lewat env di `.bash_profile`.
+
+> Ukuran baru di config **tidak** mengubah baris fstab yang sudah ada —
+> edit `/etc/fstab` manual lalu reboot.
+> Risiko: dataset besar bisa memenuhi `/tmp` ("No space left on device"),
+> dan isi `/tmp` hilang saat reboot. Sesuaikan `TMPFS_TMP_SIZE` dengan RAM.
+
 ## 4. Keybind tambahan
 
 Semua bind default aro tetap ada (lihat `/usr/share/doc/aro/config.example`).
@@ -154,7 +174,7 @@ sudo UPDATE_ARO=1 UPDATE_ONLYOFFICE=1 /opt/dotfiles-aro.minimal/update.sh
 ```
 `UPDATE_ARO` rebuild aro · `UPDATE_ONLYOFFICE` download ulang AppImage ·
 `UPDATE_PROTONGE` Proton-GE terbaru · `UPDATE_SUNG` build ulang Sung ·
-`UPDATE_D2` build ulang venv Detectron2.
+`UPDATE_D2` build ulang venv Detectron2 (versi terbaru).
 
 `update.sh` juga membuat ulang entry EFISTUB **kalau cmdline berubah**
 (mis. `CPU`/`GPU`/`GPU_GEN` diganti); kalau sama, entry tidak disentuh.
@@ -179,12 +199,12 @@ Ganti profil: edit `PROFILES` di `/etc/dotfiles-aro.minimal.conf`, lalu jalankan
 | ? | gagal cek (offline / batas API GitHub) |
 
 Item: Sistem (pacman), YouTube-Sung (yt-dlp), OnlyOffice, superfile,
-Sung, aro, dan *Cek-saja*. `Super+Ctrl+U` hanya mencakup Sistem, yt-dlp,
-OnlyOffice, superfile — **Sung dan aro sengaja manual** lewat `Super+U`
+Sung, aro, Detectron2 (profil ai), dan *Cek-saja*. `Super+Ctrl+U` hanya mencakup Sistem, yt-dlp,
+OnlyOffice, superfile — **Sung, aro, dan Detectron2 sengaja manual** lewat `Super+U`
 karena dibuild dari commit terbaru upstream (di luar versi yang dikunci).
 
 Komponen: `/usr/local/bin/office-update` (menu), `/usr/local/sbin/office-update-root`
-(daftar putih: system | onlyoffice | superfile | aro), dan
+(daftar putih: system | onlyoffice | superfile | aro | detectron2), dan
 `/etc/sudoers.d/office-update` (Admin boleh menjalankan helper itu tanpa
 sudo kedua; divalidasi `visudo` sebelum dipasang).
 
@@ -228,31 +248,50 @@ Risiko: update Python sistem (minor naik) bisa merusak venv Sung —
 
 ## 6a. Profil ai: Detectron2 + train-run
 
-**Backend** (`AI_BACKEND=auto`): `GPU=nvidia` → **cuda**, selain itu →
-**cpu** (ROCm belum didukung skrip ini). Paket `cuda` (beberapa GB) hanya dipasang untuk cuda.
+Hanya untuk **GPU NVIDIA** (`AI_BACKEND=auto` → cuda). Di mesin lain
+Detectron2 dilewati; `train-run` tetap terpasang.
 
-**Lokasi:** venv bersama `/opt/detectron2/venv` (milik root, read-only untuk
-user umum; Python 3.12 lewat `uv`). Dataset, output, checkpoint di home user
-umum: `~/training/<nama-job>/`.
+Semua versi **terbaru** (bukan meniru mesin Ubuntu lama), dibangun oleh
+`profiles/ai/install-detectron2.sh` (root):
 
-**Versi:** index wheel PyTorch dipilih dari versi `nvcc` (CUDA 13 → `cu130`,
-12.8/12.9 → `cu128`/`cu129`) — major CUDA torch **harus sama** dengan nvcc
-sistem. Bisa dipaksa lewat `TORCH_INDEX`. Arch build `TORCH_CUDA_ARCH="12.0"`
-(RTX 5060 & 5080 sama-sama `sm_120`). Detectron2 dikunci lewat `D2_REV`
-setelah lolos uji. Setiap torch di-upgrade → `UPDATE_D2=1`.
-
-**Cek setelah boot pertama** (di chroot GPU belum terlihat):
 ```
-/opt/detectron2/venv/bin/python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.get_device_name(0), torch.cuda.get_device_capability(0))"
-/opt/detectron2/venv/bin/python -m detectron2.utils.collect_env
+sudo /opt/dotfiles-aro.minimal/profiles/ai/install-detectron2.sh verify     # setelah boot: NMS + ROIAlign di GPU
+sudo /opt/dotfiles-aro.minimal/profiles/ai/install-detectron2.sh rebuild    # versi terbaru; gagal -> venv lama kembali
+sudo /opt/dotfiles-aro.minimal/profiles/ai/install-detectron2.sh rollback   # kembali ke venv sebelumnya
 ```
-Harus: capability `(12, 0)` dan major CUDA sama di `collect_env`. Lalu uji
-inference nyata supaya op CUDA Detectron2 (ROIAlign, NMS) terbukti jalan
-di GPU (bobot model diunduh sekali ke `~/.torch/iopath_cache`):
+`rebuild` juga tersedia di menu **Super+U → Detectron2** (password Admin;
+tidak ikut "update semua"; peringatan kalau training sedang berjalan).
+
+Yang ditangani script:
+- Index PyTorch dipilih dari versi `nvcc`: major CUDA sama, minor ≤ sistem.
+  CUDA < 12.8 ditolak (Blackwell butuh ≥ 12.8).
+- Python dicoba dari yang terbaru (`3.13`, lalu `3.12`); dipakai yang sudah
+  punya wheel torch. Interpreter `uv` di `/opt/detectron2/python` (bukan
+  `/root`), cache `uv` di `/tmp`.
+- Host compiler dari `/etc/profile.d/cuda.sh` (`NVCC_CCBIN` → `-ccbin`),
+  karena GCC terbaru Artix terlalu baru untuk nvcc.
+- Wajib: torch berisi kernel `sm_120` (dicek tanpa GPU, jadi aman di chroot).
+  `tkinter` dicek sebagai peringatan (SH Trainer mungkin GUI Tk).
+- Versi + commit tercatat di `/opt/detectron2/VERSIONS`.
+
+Opsi di config: `TORCH_CUDA_ARCH` (5060 & 5080 = `12.0`), `D2_REV` (kosong =
+terbaru; isi untuk mengunci). Requirements SH Trainer: taruh
+`profiles/ai/shtrainer-requirements.txt` (dari `pip freeze` mesin lama,
+**tanpa** torch/torchvision/detectron2) — otomatis dipakai.
+
+**Lokasi:** venv `/opt/detectron2/venv` (milik root, read-only untuk user
+umum). Dataset, output, checkpoint di home user umum: `~/training/<job>/`.
+
+**Uji inference nyata** (bobot model diunduh sekali ke `~/.torch/iopath_cache`):
 ```
 mkdir -p ~/uji/gambar      # isi beberapa .jpg/.png
 /opt/detectron2/venv/bin/python /opt/dotfiles-aro.minimal/tools/d2-infer-load.py ~/uji/gambar 3
 ```
+
+**Validasi akhir sebelum produksi:** training SH Trainer di Artix
+menghasilkan AP50 setara mesin Ubuntu (BBox/Segm ~65–70 pada dataset yang
+sama). Mesin Ubuntu tetap produksi sampai hasilnya setara. Cek juga path
+hardcode `/home/aiserver/...` di source SH Trainer.
 
 **Menjalankan training** — selalu lewat `train-run`, supaya menutup kitty
 tidak menghentikan job:

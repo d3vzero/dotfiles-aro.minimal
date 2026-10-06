@@ -59,6 +59,9 @@ passwd
 echo ">> Password $ADMIN_USER:"
 passwd "$ADMIN_USER"
 
+step "[5b/10] tmpfs /tmp + ~/.cache, noatime"
+apply_tmpfs
+
 step "[6/10] aro (build dari source) + superfile"
 build_aro
 install_superfile

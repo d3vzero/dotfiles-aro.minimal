@@ -1,8 +1,9 @@
-# ai -- Detectron2 (training). Paket `cuda` ditambah setup.sh hanya kalau
-# backend = cuda (beberapa GB). venv Python 3.12 dibuat lewat uv.
+# ai -- Detectron2 (training) di NVIDIA. Paket `cuda` (beberapa GB) dipasang
+# setup.sh hanya kalau backend = cuda. Python + torch lewat uv (install-detectron2.sh).
 base-devel
 git
 cmake
 ninja
 uv
-nvtop                   # pantau GPU (NVIDIA & AMD)
+curl
+nvtop                   # pantau GPU

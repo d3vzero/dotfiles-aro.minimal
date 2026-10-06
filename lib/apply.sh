@@ -54,7 +54,7 @@ load_conf() {
 
     AI_BACKEND_RESOLVED="$(resolve_ai_backend)"
     export REPO_DIR PUBLIC_USER PUBLIC_HOME ADMIN_USER SUNG_REV CPU GPU GPU_GEN \
-           AI_BACKEND_RESOLVED D2_REV TORCH_INDEX TORCH_CUDA_ARCH
+           AI_BACKEND_RESOLVED D2_REV TORCH_CUDA_ARCH
 }
 
 has_profile() { [[ " $PROFILES " == *" $1 "* ]]; }
@@ -292,6 +292,11 @@ setup_public_home() {
         # ~/.local/bin wajib di PATH SEBELUM aro start: app per-user (Sung) dibuka
         # fuzzel lewat Exec= tanpa path lengkap. Titik dua jangan sampai hilang.
         echo 'export PATH="$HOME/.local/bin:$PATH"'
+        # ~/.cache di tmpfs: cache yang mahal dibuat ulang disimpan di disk
+        echo 'export MESA_SHADER_CACHE_DIR="$HOME/.local/state/shader-cache/mesa"'
+        echo 'export __GL_SHADER_DISK_CACHE_PATH="$HOME/.local/state/shader-cache/nvidia"'
+        echo 'export __GL_SHADER_DISK_CACHE_SKIP_CLEANUP=1'
+        echo 'export MPLCONFIGDIR="$HOME/.local/state/matplotlib"'
         echo 'if [ -z "$WAYLAND_DISPLAY" ] && [ "$(tty)" = /dev/tty1 ]; then'
         if [ "$GPU" = "vm" ]; then
             echo '  export WLR_NO_HARDWARE_CURSORS=1   # VM (virtio-gpu): kursor meleset tanpa ini'
@@ -385,4 +390,11 @@ setup_efistub() {
         --loader /vmlinuz-linux --unicode "$cmdline"
     mkdir -p "$STATE_DIR"
     echo "$cmdline" > "$STATE_DIR/efistub.cmdline"
+}
+
+# tmpfs /tmp + ~/.cache user umum + noatime (idempotent; berlaku setelah reboot).
+# Catatan: ukuran baru di config TIDAK mengubah baris fstab yang sudah ada.
+apply_tmpfs() {
+    bash "$REPO_DIR/core/setup-tmpfs.sh" "$PUBLIC_USER" \
+        "${TMPFS_TMP_SIZE:-50%}" "${TMPFS_CACHE_SIZE:-2G}" | sed -n '1,/^Tambahkan ke/p' | sed '$d'
 }

@@ -23,9 +23,10 @@ SUNG_PY="$HOME/.local/lib/sung/runtime/bin/python"
 SELF=$(readlink -f "$0")
 mkdir -p "$STATE"
 
-ROOT_ITEMS="system onlyoffice superfile aro"
+ROOT_ITEMS="system onlyoffice superfile aro detectron2"
 ALL_ITEMS="system ytdlp onlyoffice superfile"      # yang ikut "update semua"
-MENU_ITEMS="system ytdlp onlyoffice superfile sung aro"
+MENU_ITEMS="system ytdlp onlyoffice superfile sung aro detectron2"
+D2_REPO=https://github.com/facebookresearch/detectron2.git
 
 label() {
     case $1 in
@@ -35,6 +36,7 @@ label() {
         superfile)  echo "superfile" ;;
         sung)       echo "Sung" ;;
         aro)        echo "aro" ;;
+        detectron2) echo "Detectron2" ;;
     esac
 }
 desc() {
@@ -45,6 +47,7 @@ desc() {
         superfile)  echo "binary dari rilis resmi GitHub" ;;
         sung)       echo "build ulang dari GitHub (commit terbaru)" ;;
         aro)        echo "build ulang window manager, aktif setelah reboot" ;;
+        detectron2) echo "venv AI versi terbaru; gagal -> venv lama kembali" ;;
     esac
 }
 
@@ -87,6 +90,12 @@ status() {
         aro)
             cur=$(git -c safe.directory="$ARO_SRC" -C "$ARO_SRC" rev-parse --short=7 HEAD 2>/dev/null)
             latest=$(git_remote_head "$ARO_REPO")
+            [ -n "$latest" ] || { echo "ERR|gagal cek"; return; }
+            [ "$cur" = "$latest" ] && echo "OK|$cur" || echo "NEED|${cur:-?} → $latest" ;;
+        detectron2)
+            [ -x /opt/detectron2/venv/bin/python ] || { echo "SKIP|tidak terpasang (profil ai)"; return; }
+            cur=$(sed -n 's/.*commit \([0-9a-f]\{7\}\).*/\1/p' /opt/detectron2/VERSIONS 2>/dev/null)
+            latest=$(git_remote_head "$D2_REPO")
             [ -n "$latest" ] || { echo "ERR|gagal cek"; return; }
             [ "$cur" = "$latest" ] && echo "OK|$cur" || echo "NEED|${cur:-?} → $latest" ;;
         sung)
@@ -204,10 +213,10 @@ cmd_run() {
         case " $ROOT_ITEMS " in *" $i "*) root+=("$i") ;; *) user+=("$i") ;; esac
     done
     # workstation AI: jangan update sistem diam-diam saat training jalan
-    case " ${root[*]} " in *" system "*)
+    case " ${root[*]} " in *" system "*|*" detectron2 "*)
         if gpu_busy; then
-            echo "⚠ Training/GPU sedang berjalan. Update sistem bisa memperbarui"
-            echo "  driver NVIDIA/CUDA dan membuat training crash."
+            echo "⚠ Training/GPU sedang berjalan. Update sistem / Detectron2 bisa"
+            echo "  memperbarui driver NVIDIA/CUDA/torch dan membuat training crash."
             read -rp "Tetap lanjut? [y/N] " a
             case $a in y|Y) ;; *) echo "Dibatalkan."; read -rp "Tekan Enter untuk menutup…" _; exit 0 ;; esac
         fi ;;
