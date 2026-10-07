@@ -21,7 +21,7 @@ if [ -x /opt/detectron2/venv/bin/python ] && [ "${UPDATE_D2:-0}" != "1" ]; then
 fi
 
 REQ="$PDIR/shtrainer-requirements.txt"
-env TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH:-12.0}" D2_REV="${D2_REV:-}" \
+env TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH:-12.0}" D2_REV="${D2_REV:-}" TORCH_INDEX="${TORCH_INDEX:-}" \
     D2_EXTRA_REQ="$( [ -f "$REQ" ] && echo "$REQ" || true )" \
     bash "$PDIR/install-detectron2.sh" install
 # cache uv: di chroot /tmp masih di disk (tmpfs baru aktif setelah reboot)

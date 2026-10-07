@@ -54,7 +54,7 @@ load_conf() {
 
     AI_BACKEND_RESOLVED="$(resolve_ai_backend)"
     export REPO_DIR PUBLIC_USER PUBLIC_HOME ADMIN_USER SUNG_REV CPU GPU GPU_GEN \
-           AI_BACKEND_RESOLVED D2_REV TORCH_CUDA_ARCH
+           AI_BACKEND_RESOLVED D2_REV TORCH_CUDA_ARCH TORCH_INDEX
 }
 
 has_profile() { [[ " $PROFILES " == *" $1 "* ]]; }

@@ -93,11 +93,11 @@ up_detectron2() {
     local s=/opt/dotfiles-aro.minimal/profiles/ai/install-detectron2.sh
     [ -x /opt/detectron2/venv/bin/python ] || { echo "tidak terpasang (profil ai) -- skip"; return 0; }
     [ -x "$s" ] || { echo "!! $s tidak ada"; return 1; }
-    local TORCH_CUDA_ARCH="" D2_REV="" req=/opt/dotfiles-aro.minimal/profiles/ai/shtrainer-requirements.txt
+    local TORCH_CUDA_ARCH="" D2_REV="" TORCH_INDEX="" req=/opt/dotfiles-aro.minimal/profiles/ai/shtrainer-requirements.txt
     # shellcheck disable=SC1091
     . /etc/dotfiles-aro.minimal.conf
     local ok=0
-    env TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH:-12.0}" D2_REV="${D2_REV:-}" \
+    env TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH:-12.0}" D2_REV="${D2_REV:-}" TORCH_INDEX="${TORCH_INDEX:-}" \
         D2_EXTRA_REQ="$( [ -f "$req" ] && echo "$req" )" \
         "$s" rebuild && "$s" verify || ok=1
     rm -rf /tmp/uv-cache

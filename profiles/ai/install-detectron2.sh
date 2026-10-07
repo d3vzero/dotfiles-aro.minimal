@@ -48,7 +48,12 @@ cuda_env() {
     # paket cuda Arch menyediakan PATH dan NVCC_CCBIN (versi GCC yang didukung nvcc)
     # shellcheck disable=SC1091
     # set +u: cuda.sh bisa memakai variabel yang belum di-set
-    if [ -f /etc/profile.d/cuda.sh ]; then set +u; . /etc/profile.d/cuda.sh; set -u; fi
+    # cuda.sh memakai fungsi append_path dari /etc/profile -- definisikan dulu
+    if [ -f /etc/profile.d/cuda.sh ]; then
+        append_path() { case ":$PATH:" in *":$1:"*) ;; *) PATH="${PATH:+$PATH:}$1" ;; esac; }
+        set +u; . /etc/profile.d/cuda.sh; set -u
+        unset -f append_path
+    fi
     export CUDA_HOME=${CUDA_HOME:-/opt/cuda}
     export PATH="$CUDA_HOME/bin:$PATH"
     command -v nvcc >/dev/null || die "nvcc tidak ditemukan (pasang paket cuda)"
@@ -63,12 +68,18 @@ cuda_env() {
 }
 
 torch_index() {
-    # cari index PyTorch dengan major CUDA sama, minor <= nvcc sistem (mis. 13.0 → cu130)
+    # TORCH_INDEX dari config/env menang; kalau kosong cari index PyTorch dengan
+    # major CUDA sama, minor <= nvcc sistem (mis. 13.4 -> cu130)
+    if [ -n "${TORCH_INDEX:-}" ]; then echo "$TORCH_INDEX"; return 0; fi
     local m tag
     for m in $(seq "$CMIN" -1 0); do
         tag="cu${CMAJ}${m}"
         [ "$CMAJ" -eq 12 ] && [ "$m" -lt 8 ] && break
-        if curl -fsI --max-time 15 "https://download.pytorch.org/whl/$tag/torch/" >/dev/null; then
+        # Index yang TIDAK ada pun bisa membalas 200 (isinya torch lama) ->
+        # pastikan halaman benar-benar memuat wheel +cuXXX
+        # (halaman disimpan dulu: "curl | grep -q" + pipefail bisa gagal karena SIGPIPE)
+        local page; page="$(curl -fsS --max-time 30 "https://download.pytorch.org/whl/$tag/torch/" 2>/dev/null || true)"
+        if grep -q "${tag}-cp3" <<<"$page"; then
             echo "https://download.pytorch.org/whl/$tag"; return 0
         fi
     done

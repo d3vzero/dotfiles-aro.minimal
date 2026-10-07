@@ -122,6 +122,8 @@ Profil `daily` menambah driver 32-bit Steam yang sesuai GPU.
 
 - Di Artix wajib **`nvidia-open-dkms`** (kernel Artix beda build dengan Arch;
   butuh `linux-headers`, sudah di basestrap). RTX 50xx hanya didukung open module.
+- `GPU=nvidia`: hook `kms` dihapus dari `/etc/mkinitcpio.conf` supaya
+  nouveau tidak masuk initramfs dan merebut GPU saat boot awal.
 - aro di NVIDIA **belum diuji** — jalankan stress test dulu (`tools/`).
   Kalau ada glitch tampilan, coba tambahkan `export WLR_RENDERER=vulkan`.
 - `GPU=vm`: tanpa microcode, plus `WLR_NO_HARDWARE_CURSORS=1` dan core dump
