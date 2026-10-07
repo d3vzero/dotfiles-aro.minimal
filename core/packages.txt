@@ -47,6 +47,7 @@ firefox
 # build aro + tool script
 git
 openssh                 # klien ssh untuk git push (server sshd tetap ikut ENABLE_SSH)
+less                    # pager untuk git log/diff, man
 meson
 ninja
 wayland
