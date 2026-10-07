@@ -398,3 +398,13 @@ apply_tmpfs() {
     bash "$REPO_DIR/core/setup-tmpfs.sh" "$PUBLIC_USER" \
         "${TMPFS_TMP_SIZE:-50%}" "${TMPFS_CACHE_SIZE:-2G}" | sed -n '1,/^Tambahkan ke/p' | sed '$d'
 }
+
+# NVIDIA: hook "kms" memasukkan modul nouveau ke initramfs, yang bisa merebut
+# GPU saat boot awal sebelum nvidia dimuat (Arch wiki: hapus kms dari HOOKS).
+setup_initramfs() {
+    if [ "$GPU" = nvidia ] && grep -qE '^HOOKS=.*[( ]kms[ )]' /etc/mkinitcpio.conf; then
+        sed -i -E '/^HOOKS=/ s/ kms( |\))/\1/' /etc/mkinitcpio.conf
+        echo "    hook kms dihapus dari mkinitcpio (NVIDIA) -- initramfs dibuat ulang"
+        mkinitcpio -P
+    fi
+}

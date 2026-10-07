@@ -45,6 +45,7 @@ enable_repos
 
 step "[4/10] Paket (core + profil: $PROFILES)"
 install_packages
+setup_initramfs
 
 step "[5/10] User & sudo"
 if ! id "$ADMIN_USER" >/dev/null 2>&1; then
