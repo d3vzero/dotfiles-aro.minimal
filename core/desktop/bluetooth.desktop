@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Bluetooth
+Comment=Scan, pair, dan connect perangkat Bluetooth (bluetui)
+Exec=kitty -e bluetui
+Icon=bluetooth
+Terminal=false
+Type=Application
+Categories=System;Settings;
+Keywords=bluetooth;headset;speaker;pair;bluetui;

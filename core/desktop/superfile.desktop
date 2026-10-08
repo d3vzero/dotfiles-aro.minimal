@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=superfile
+GenericName=File Manager
+Comment=Kelola file dan folder (di terminal)
+Exec=kitty -e spf
+Icon=system-file-manager
+Terminal=false
+Type=Application
+Categories=System;FileManager;Utility;
+Keywords=file;folder;spf;explorer;
