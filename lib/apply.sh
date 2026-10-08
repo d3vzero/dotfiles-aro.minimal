@@ -190,6 +190,21 @@ install_packages() {
     pacman -S --needed --noconfirm "${pkgs[@]}"
 }
 
+# Patch lokal untuk aro (core/patches/aro/*.patch), diterapkan setelah checkout.
+# Gagal diterapkan (upstream berubah) -> build berhenti dengan pesan jelas.
+apply_aro_patches() {
+    local src="$1" pt
+    for pt in "$REPO_DIR"/core/patches/aro/*.patch; do
+        [ -e "$pt" ] || continue
+        if git -C "$src" apply --check "$pt" 2>/dev/null; then
+            git -C "$src" apply "$pt"
+            echo "    patch aro: $(basename "$pt")"
+        else
+            die "patch $(basename "$pt") tidak cocok dengan source aro ($ARO_REF) -- perbarui patch-nya"
+        fi
+    done
+}
+
 build_aro() {
     if [ -x /usr/bin/aro ] && [ "${UPDATE_ARO:-0}" != "1" ]; then
         echo "    aro sudah ada -- skip (UPDATE_ARO=1 untuk rebuild)"
@@ -200,6 +215,7 @@ build_aro() {
     if [ -n "$ARO_REF" ]; then
         git -C /opt/aro-src checkout --quiet "$ARO_REF"
     fi
+    apply_aro_patches /opt/aro-src
     # -Deffects=false: tanpa SceneFX (= tanpa AUR); -Dwallpaper=disabled: warna polos
     meson setup /opt/aro-src/build /opt/aro-src --prefix=/usr --buildtype=release \
         -Deffects=false -Dwallpaper=disabled
@@ -332,7 +348,8 @@ setup_public_home() {
     sed -i -e 's/^bar = true/bar = false/' \
            -e 's/^# wallpaper = auto$/wallpaper = none/' \
            -e 's/spawn, foot$/spawn, kitty/' \
-           -e '/^bind = mod+w, wallpapers/d' "$AC"
+           -e '/^bind = mod+w, wallpapers/d' \
+           -e 's/^layout = dwindle$/layout = scroll/' "$AC"
     { echo; cat "$T/config/aro/overrides.conf"; } >> "$AC"
     if [ "$ENABLE_BLUETOOTH" = "yes" ]; then
         printf '\nbind = mod+b, spawn, kitty -e bluetui\n' >> "$AC"
@@ -353,6 +370,7 @@ setup_public_home() {
     if ! grep -q '^bar = false' "$AC";       then warn "aro: 'bar = false' tidak ter-set (config.example berubah?)"; fi
     if ! grep -q '^wallpaper = none' "$AC";  then warn "aro: 'wallpaper = none' tidak ter-set (config.example berubah?)"; fi
     if ! grep -q 'spawn, kitty$' "$AC";      then warn "aro: terminal default belum diganti ke kitty (config.example berubah?)"; fi
+    if ! grep -q '^layout = scroll' "$AC";   then warn "aro: 'layout = scroll' tidak ter-set (config.example berubah?)"; fi
 
     cp "$T/config/fuzzel/fuzzel.ini" "$H/.config/fuzzel/fuzzel.ini"
     cp "$T/config/kitty/kitty.conf"  "$H/.config/kitty/kitty.conf"

@@ -1,0 +1,60 @@
+diff --git a/src/compositor/arrange.c b/src/compositor/arrange.c
+index 49b2ed4..8a6e15b 100644
+--- a/src/compositor/arrange.c
++++ b/src/compositor/arrange.c
+@@ -135,7 +135,11 @@ static void scroll_place(struct aro_server *s, struct aro_output *o, int ws)
+ 
+ 	/* move just enough to show the focused column, its neighbours peeking in */
+ 	double off = o->scroll[ws];
+-	if (f >= 0) {
++	if (f >= 0 && s->cfg.scroll_center) {
++		/* scroll_center: the focused column sits in the middle of the screen,
++		 * even the first or last one (so no clamping below) */
++		off = x[f] + w[f] / 2.0 - view.w / 2.0;
++	} else if (f >= 0) {
+ 		int peek = s->cfg.scroll_peek;
+ 		int left = f > 0 ? peek + gap : 0;
+ 		int right = f < n - 1 ? peek + gap : 0;
+@@ -147,7 +151,8 @@ static void scroll_place(struct aro_server *s, struct aro_output *o, int ws)
+ 			off = x[f] - left;      /* last: a wide column shows its left edge */
+ 	}
+ 	double max = total > view.w ? total - view.w : 0;
+-	off = off > max ? max : off < 0 ? 0 : off;
++	if (!(s->cfg.scroll_center && f >= 0))
++		off = off > max ? max : off < 0 ? 0 : off;
+ 	o->scroll[ws] = off;
+ 
+ 	for (int i = 0; i < n; i++)
+diff --git a/src/compositor/config.c b/src/compositor/config.c
+index 58b6a05..c0cf8c0 100644
+--- a/src/compositor/config.c
++++ b/src/compositor/config.c
+@@ -429,6 +429,7 @@ void config_defaults(struct aro_config *c)
+ 	c->gesture_fingers = 3;
+ 	c->scroll_width = 0.5;
+ 	c->scroll_peek = 40;
++	c->scroll_center = false;
+ 	c->scroll_presets[0] = 1.0 / 3;
+ 	c->scroll_presets[1] = 0.5;
+ 	c->scroll_presets[2] = 2.0 / 3;
+@@ -1459,6 +1460,8 @@ bool config_load(struct aro_config *c, const char *path)
+ 					c->scroll_presets[i] = p[i];
+ 				c->nscroll_presets = n;
+ 			}
++		} else if (!strcasecmp(key, "scroll_center")) {
++			ok = parse_bool(value, &c->scroll_center);
+ 		} else if (!strcasecmp(key, "scroll_peek")) {
+ 			int n;
+ 			ok = parse_int(value, &n) && n >= 0 && n <= 400;
+diff --git a/src/compositor/config.h b/src/compositor/config.h
+index 265c4f4..7bd8388 100644
+--- a/src/compositor/config.h
++++ b/src/compositor/config.h
+@@ -202,6 +202,7 @@ struct aro_config {
+ 	/* layout = scroll */
+ 	double scroll_width;    /* a new column's width, as a share of the screen */
+ 	int scroll_peek;        /* pixels of the neighbouring columns left showing */
++	bool scroll_center;     /* keep the focused column in the middle of the screen */
+ 	double scroll_presets[8];       /* what the width action steps through, ascending */
+ 	int nscroll_presets;
+ 	double tp_speed;        /* -1..1 */

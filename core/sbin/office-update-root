@@ -73,7 +73,21 @@ up_aro() {
         || { echo "!! origin/HEAD tidak dikenal"; return 1; }
     [ "$old" = "$new" ] && { echo "sudah terbaru (${old:0:7})"; return 0; }
     git -C "$src" log --oneline "$old..$new" | head -20
+    # buang patch lokal dulu supaya checkout tidak bentrok, lalu pasang lagi
+    git -C "$src" checkout -q -- .
     git -C "$src" checkout -q "$new" || { echo "!! checkout gagal"; return 1; }
+    local pt
+    for pt in /opt/dotfiles-aro.minimal/core/patches/aro/*.patch; do
+        [ -e "$pt" ] || continue
+        if ! git -C "$src" apply "$pt"; then
+            echo "!! patch $(basename "$pt") tidak cocok dengan aro ${new:0:7} -- dibatalkan, aro lama tetap dipakai"
+            git -C "$src" checkout -q -- .
+            git -C "$src" checkout -q "$old"
+            for pt in /opt/dotfiles-aro.minimal/core/patches/aro/*.patch; do git -C "$src" apply "$pt" 2>/dev/null || true; done
+            return 1
+        fi
+        echo "patch aro: $(basename "$pt")"
+    done
     if ninja -C "$src/build" && ninja -C "$src/build" install >/dev/null; then
         rm -rf /usr/share/backgrounds/aro
         echo "aro ${old:0:7} → ${new:0:7}. Aktif setelah reboot (Ctrl+Alt+Del → Reboot)."
@@ -81,7 +95,9 @@ up_aro() {
         echo "   kecuali dijalankan dengan UPDATE_ARO=1 (kembali ke ARO_REF)."
     else
         echo "!! build aro gagal, source dikembalikan ke ${old:0:7}; aro lama tetap dipakai"
+        git -C "$src" checkout -q -- .
         git -C "$src" checkout -q "$old"
+        for pt in /opt/dotfiles-aro.minimal/core/patches/aro/*.patch; do git -C "$src" apply "$pt" 2>/dev/null || true; done
         return 1
     fi
 }

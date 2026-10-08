@@ -151,6 +151,12 @@ mahal dibuat ulang (shader Mesa/NVIDIA, matplotlib) diarahkan ke
 
 ## 4. Keybind tambahan
 
+**Layout default: scroll** (kolom di strip horizontal, `Super+T` mengganti
+layout per workspace). Kolom yang difokus — termasuk aplikasi yang baru dibuka —
+**selalu di tengah layar** (`scroll_center = true`). Opsi ini dari patch lokal
+`core/patches/aro/0001-scroll-center.patch` yang diterapkan setiap aro dibuild;
+kalau upstream aro berubah sampai patch tidak cocok, build berhenti dengan pesan jelas.
+
 Semua bind default aro tetap ada (lihat `/usr/share/doc/aro/config.example`).
 Tambahan dari repo ini:
 
