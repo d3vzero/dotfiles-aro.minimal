@@ -1,0 +1,52 @@
+#!/bin/bash
+# screenshot -- Super+Shift+S. Saves to ~/Pictures/Screenshot and copies to clipboard.
+#   screenshot          menu: Window (default, Enter), Region, Full screen
+#   screenshot window   focused window (geometry from `aroctl -j focused`)
+#   screenshot region   drag a region (slurp)
+#   screenshot full     the focused monitor
+set -uo pipefail
+DIR="$HOME/Pictures/Screenshot"
+mkdir -p "$DIR"
+FILE="$DIR/screenshot_$(date +%Y%m%d_%H%M%S).png"
+notify() { notify-send -a Screenshot "$@" 2>/dev/null || true; }
+
+focused_output() { aroctl -j monitors 2>/dev/null | jq -r '.[] | select(.focused) | .name' | head -n1; }
+
+shot_full() {
+    local o; o="$(focused_output)"
+    if [ -n "$o" ]; then grim -o "$o" "$FILE"; else grim "$FILE"; fi
+}
+shot_window() {
+    local g
+    g="$(aroctl -j focused 2>/dev/null | jq -r '"\(.x),\(.y) \(.width)x\(.height)"' 2>/dev/null)"
+    if [ -z "$g" ] || [ "$g" = "null,null nullxnull" ]; then
+        notify "No focused window" "Taking the full screen instead"
+        shot_full; return
+    fi
+    grim -g "$g" "$FILE"
+}
+shot_region() {
+    local g; g="$(slurp)" || exit 0          # Esc = cancel
+    grim -g "$g" "$FILE"
+}
+
+mode="${1:-menu}"
+if [ "$mode" = menu ]; then
+    choice="$(printf 'Window\nRegion\nFull screen\n' | fuzzel --dmenu --lines 3 --width 30 \
+              --prompt 'Screenshot ❯ ')" || exit 0
+    case "$choice" in
+        Region*) mode=region ;;
+        Full*)   mode=full ;;
+        *)       mode=window ;;
+    esac
+    sleep 0.3                               # let the menu close before capturing
+fi
+case "$mode" in
+    window) shot_window ;;
+    region) shot_region ;;
+    full)   shot_full ;;
+    *) sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac
+[ -s "$FILE" ] || { notify -u critical "Screenshot failed"; exit 1; }
+wl-copy --type image/png < "$FILE" 2>/dev/null || true
+notify -i "$FILE" "Screenshot saved" "$FILE (copied to clipboard)"

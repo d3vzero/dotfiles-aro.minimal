@@ -21,6 +21,11 @@ xdg-utils
 kitty
 fuzzel
 wlr-randr               # ganti resolusi/refresh monitor (monitor-mode)
+grim                    # screenshot (Super+Shift+S)
+slurp                   # pilih area screenshot
+wl-clipboard            # salin screenshot ke clipboard
+wf-recorder             # rekam layar (Super+Shift+R)
+libpulse                # pactl: mixer audio rekaman
 mako
 pacman-contrib   # checkupdates (menu update Super+U)
 libnotify     # notify-send (sung-yt, script lain)

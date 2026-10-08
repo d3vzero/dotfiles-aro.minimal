@@ -1,10 +1,10 @@
 #!/bin/bash
-# monitor-mode -- pilih resolusi + refresh rate lewat wlr-randr (aro mendukung
-# wlr-output-management), dengan konfirmasi dan kembali otomatis.
-#   monitor-mode menu      pilih dari daftar (MONITOR_MODES di config mesin,
-#                          kosong = semua mode yang dilaporkan monitor)
-#   monitor-mode apply M   terapkan M (mis. 2560x1440@240) tanpa konfirmasi
-#   monitor-mode restore   terapkan mode tersimpan (dipanggil saat aro start)
+# monitor-mode -- pick resolution + refresh rate via wlr-randr (aro supports
+# wlr-output-management), with confirmation and automatic revert.
+#   monitor-mode menu      pick from a list (MONITOR_MODES in the machine config,
+#                          empty = every mode the monitor reports)
+#   monitor-mode apply M   apply M (e.g. 2560x1600@240) without confirmation
+#   monitor-mode restore   apply the saved mode (run when aro starts)
 set -uo pipefail
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/aro-monitor"
 CONF=/etc/dotfiles-aro.minimal.conf
@@ -12,7 +12,7 @@ MODES="$( . "$CONF" 2>/dev/null; echo "${MONITOR_MODES:-}" )"
 OUT_CONF="$( . "$CONF" 2>/dev/null; echo "${MONITOR_OUTPUT:-}" )"
 CONFIRM_SECS=15
 
-notify() { notify-send -a Monitor "$@" 2>/dev/null || true; }
+notify() { notify-send -a Display "$@" 2>/dev/null || true; }
 
 output_name() {      # MONITOR_OUTPUT dari config, atau output aktif pertama
     if [ -n "$OUT_CONF" ]; then echo "$OUT_CONF"; return; fi
@@ -59,7 +59,7 @@ apply_mode() {       # apply_mode OUTPUT WxH@R  -> 0 kalau berhasil
 
 cmd_menu() {
     local o cur list choice sel prev ans
-    o="$(output_name)"; [ -n "$o" ] || { notify -u critical "Monitor" "Output tidak ditemukan (wlr-randr)"; exit 1; }
+    o="$(output_name)"; [ -n "$o" ] || { notify -u critical "Display" "No output found (wlr-randr)"; exit 1; }
     cur="$(current_mode "$o")"
     if [ -n "$MODES" ]; then
         list="$(printf '%s\n' $MODES)"
@@ -73,33 +73,33 @@ cmd_menu() {
             mark=""
             if [ -n "$cur" ] && [ "${cur%@*}" = "$wh" ] && \
                awk -v a="${cur#*@}" -v b="$r" 'BEGIN { d = a - b; exit !(d < 1 && d > -1) }'; then
-                mark="  ● aktif"
+                mark="  ● active"
             fi
             printf '%-10s @ %3s Hz   %-5s%s\n' "$wh" "$r" "$(aspect "$w" "$h")" "$mark"
         done <<<"$list" | fuzzel --dmenu --font monospace:size=11 --width 50 --lines 10 \
-                                 --prompt "Monitor $o ❯ "
+                                 --prompt "Display $o ❯ "
     )" || exit 0
     sel="$(awk '{ print $1 "@" $3 }' <<<"$choice")"
     [ -n "$sel" ] || exit 0
-    case "$choice" in *aktif*)
-        # mode yang sedang aktif dipilih -> cukup simpan sebagai mode login
+    case "$choice" in *active*)
+        # the active mode was picked -> just save it as the login mode
         mkdir -p "$STATE"; echo "$sel" > "$STATE/mode"
-        notify "Monitor" "Mode $sel disimpan (dipakai lagi saat login)"
+        notify "Display" "Saved $sel (applied again at login)"
         exit 0 ;;
     esac
 
     prev="$cur"
     if ! apply_mode "$o" "$sel"; then
-        notify -u critical "Monitor" "Gagal menerapkan $sel"; exit 1
+        notify -u critical "Display" "Could not apply $sel (rejected by the driver or monitor)"; exit 1
     fi
-    ans="$(printf 'Pertahankan\nKembalikan\n' | timeout "$CONFIRM_SECS" \
-           fuzzel --dmenu --prompt "Mode $sel OK? (kembali otomatis ${CONFIRM_SECS} dtk) ❯ ")"
-    if [ "$ans" = "Pertahankan" ]; then
+    ans="$(printf 'Keep\nRevert\n' | timeout "$CONFIRM_SECS" \
+           fuzzel --dmenu --prompt "Keep $sel? (reverts in ${CONFIRM_SECS}s) ❯ ")"
+    if [ "$ans" = "Keep" ]; then
         mkdir -p "$STATE"; echo "$sel" > "$STATE/mode"
-        notify "Monitor" "Mode $sel disimpan (dipakai lagi saat login)"
+        notify "Display" "Saved $sel (applied again at login)"
     else
         [ -n "$prev" ] && apply_mode "$o" "$prev"
-        notify "Monitor" "Kembali ke ${prev:-mode sebelumnya}"
+        notify "Display" "Reverted to ${prev:-the previous mode}"
     fi
 }
 
@@ -111,12 +111,12 @@ cmd_restore() {
         o="$(output_name 2>/dev/null)"; [ -n "$o" ] && break; sleep 0.5
     done
     [ -n "${o:-}" ] || exit 0
-    apply_mode "$o" "$m" || notify -u critical "Monitor" "Mode tersimpan $m gagal diterapkan"
+    apply_mode "$o" "$m" || notify -u critical "Display" "Saved mode $m could not be applied"
 }
 
 case "${1:-menu}" in
     menu)    cmd_menu ;;
-    apply)   o="$(output_name)"; apply_mode "$o" "${2:?mode, mis. 2560x1440@240}" ;;
+    apply)   o="$(output_name)"; apply_mode "$o" "${2:?mode, e.g. 2560x1600@240}" ;;
     restore) cmd_restore ;;
     *) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

@@ -167,30 +167,42 @@ Tambahan dari repo ini:
 | `Super+n` | Atur jaringan (nmtui) |
 | `Super+b` | Bluetooth: scan, pair, connect (`bluetui`) — hanya kalau `ENABLE_BLUETOOTH="yes"` |
 | `Super+Shift+c` | Cheatsheet keybind aro + superfile (dibaca dari config aktif) |
+| `Super+Shift+s` | Screenshot: menu Window (default, Enter) / Region / Full screen → `~/Pictures/Screenshot` + clipboard |
+| `Super+Shift+r` | Mulai/stop rekam layar (resolusi aktif, audio desktop + mic, .mp4) → `~/Movies/Casual` |
 | `Super+u` | Menu update: pilih satu item (lihat bagian 5a) |
 | `Super+Ctrl+u` | Update semua yang ada update-nya (konfirmasi, default **Batal**) |
 
-## 4a. Pengaturan & monitor
+## 4a. Settings & display
 
-`Super+D` → **Pengaturan** membuka menu: **Jaringan** (nmtui), **Bluetooth**
-(bluetui, kalau `ENABLE_BLUETOOTH="yes"`), dan **Monitor**.
+`Super+D` → **Settings** membuka menu: **Network** (nmtui), **Bluetooth**
+(bluetui, kalau `ENABLE_BLUETOOTH="yes"`), dan **Display**.
 
-**Monitor** menampilkan daftar resolusi + refresh rate (dari `MONITOR_MODES`
-di config, atau semua mode yang dilaporkan monitor kalau kosong) beserta rasio
-(16:10 / 16:9). Setelah memilih, muncul konfirmasi **Pertahankan / Kembalikan**;
-tanpa jawaban dalam 15 detik layar kembali ke mode sebelumnya (pengaman kalau
-monitor menolak mode). Mode yang dipertahankan disimpan per user
-(`~/.local/state/aro-monitor/mode`) dan dipasang lagi setiap login.
+**Display** menampilkan resolusi + refresh rate (dari `MONITOR_MODES` di config,
+atau semua mode yang dilaporkan monitor kalau kosong) beserta rasio. Setelah
+memilih muncul konfirmasi **Keep / Revert**; tanpa jawaban 15 detik layar kembali
+ke mode sebelumnya. Memilih mode yang sedang aktif (`● active`) menyimpannya.
+Mode tersimpan per user (`~/.local/state/aro-monitor/mode`), dipasang lagi saat login.
 
-Mode yang tidak ada di daftar EDID monitor (mis. 2560x1440 di panel 16:10)
-dipasang sebagai *custom mode*. Panel 16:10 biasanya menarik gambar 16:9 ke
-layar penuh (gepeng) kecuali menu OSD monitor diatur ke rasio asli.
-
-Contoh workstation (panel 2560x1600, 60/240/300 Hz):
+Mode di luar daftar EDID monitor dicoba sebagai *custom mode*. **Driver NVIDIA
+menolak custom mode** (teruji: 2560x1440 di panel 2560x1600 ditolak, bahkan 60 Hz),
+jadi di workstation NVIDIA isi `MONITOR_MODES` hanya dengan mode bawaan monitor:
 ```
-MONITOR_MODES="2560x1600@60 2560x1600@240 2560x1600@300 2560x1440@60 2560x1440@240 2560x1440@300"
+MONITOR_MODES="2560x1600@60 2560x1600@240 2560x1600@300"
 ```
-Dari terminal: `monitor-mode apply 2560x1440@240`.
+Dari terminal: `monitor-mode apply 2560x1600@240` (tanpa menyimpan).
+
+## 4c. Screenshot & rekam layar
+
+- **`Super+Shift+S`** → menu kecil, **Window** di urutan pertama (cukup Enter):
+  jendela yang difokus (ukuran dari `aroctl -j focused`). **Region** = seret area
+  (slurp), **Full screen** = monitor yang difokus. Hasil `.png` di
+  `~/Pictures/Screenshot/` dan disalin ke clipboard.
+- **`Super+Shift+R`** → mulai rekam monitor yang difokus di **resolusi aktif**,
+  audio desktop + mikrofon digabung, `.mp4` di `~/Movies/Casual/`. Tekan lagi
+  untuk berhenti (file ditutup rapi). Encoder video mengikuti `GPU`: nvidia →
+  `h264_nvenc`, amd/intel → `h264_vaapi`, lainnya `libx264`. FPS dari
+  `RECORD_FPS` (default 60; monitor 240/300 Hz tidak direkam sepenuh itu).
+  Log kalau gagal: `$XDG_RUNTIME_DIR/casual-record/log`.
 
 ## 4b. Bluetooth (`ENABLE_BLUETOOTH`)
 

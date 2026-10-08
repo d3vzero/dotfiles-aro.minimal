@@ -1,0 +1,73 @@
+#!/bin/bash
+# casual-record -- Super+Shift+R toggles a screen recording of the focused monitor
+# at its active resolution, with desktop audio + microphone mixed, as .mp4 in
+# ~/Movies/Casual. Video encoder follows GPU in the machine config:
+# nvidia -> h264_nvenc, amd/intel -> h264_vaapi, otherwise libx264.
+set -uo pipefail
+STATE="${XDG_RUNTIME_DIR:-/tmp}/casual-record"
+OUT_DIR="$HOME/Movies/Casual"
+CONF=/etc/dotfiles-aro.minimal.conf
+GPU="$( . "$CONF" 2>/dev/null; echo "${GPU:-}" )"
+FPS="$( . "$CONF" 2>/dev/null; echo "${RECORD_FPS:-60}" )"
+notify() { notify-send -a "Casual Record" "$@" 2>/dev/null || true; }
+mkdir -p "$STATE" "$OUT_DIR"
+
+running() { [ -f "$STATE/pid" ] && kill -0 "$(cat "$STATE/pid")" 2>/dev/null; }
+
+unload_audio() {
+    # loopbacks first, null sink last (avoids PipeWire re-negotiating other streams)
+    [ -f "$STATE/modules" ] || return 0
+    tac "$STATE/modules" | while read -r m; do
+        [ -n "$m" ] && pactl unload-module "$m" 2>/dev/null || true
+    done
+    rm -f "$STATE/modules"
+}
+
+if running; then
+    pid="$(cat "$STATE/pid")"
+    kill -INT "$pid"                         # wf-recorder finishes the .mp4 cleanly
+    for _ in $(seq 1 40); do kill -0 "$pid" 2>/dev/null || break; sleep 0.25; done
+    if kill -0 "$pid" 2>/dev/null; then      # SIGINT ignored? (background job) -> TERM
+        kill -TERM "$pid"
+        for _ in $(seq 1 20); do kill -0 "$pid" 2>/dev/null || break; sleep 0.25; done
+    fi
+    rm -f "$STATE/pid"
+    unload_audio
+    notify "Recording stopped" "$(cat "$STATE/file" 2>/dev/null)"
+    exit 0
+fi
+
+out="$(aroctl -j monitors 2>/dev/null | jq -r '.[] | select(.focused) | .name' | head -n1)"
+file="$OUT_DIR/casual_$(date +%Y%m%d_%H%M%S).mp4"
+
+# audio: desktop (monitor of the default sink) + default mic into one null sink
+sink="$(pactl get-default-sink 2>/dev/null)"; src="$(pactl get-default-source 2>/dev/null)"
+audio=()
+if [ -n "$sink" ]; then
+    m1="$(pactl load-module module-null-sink sink_name=casual_record_mix \
+          sink_properties=device.description=CasualRecordMix)"
+    m2="$(pactl load-module module-loopback source="${sink}.monitor" sink=casual_record_mix)"
+    printf '%s\n%s\n' "$m1" "$m2" > "$STATE/modules"
+    if [ -n "$src" ] && [[ "$src" != *.monitor ]]; then
+        pactl load-module module-loopback source="$src" sink=casual_record_mix >> "$STATE/modules"
+    fi
+    audio=(--audio=casual_record_mix.monitor -C aac)
+fi
+
+case "$GPU" in
+    nvidia)    video=(-c h264_nvenc) ;;
+    amd|intel) video=(-c h264_vaapi -d /dev/dri/renderD128) ;;
+    *)         video=(-c libx264 -p preset=veryfast) ;;
+esac
+
+wf-recorder ${out:+-o "$out"} -r "$FPS" "${video[@]}" "${audio[@]}" -f "$file" \
+    > "$STATE/log" 2>&1 &
+echo $! > "$STATE/pid"
+echo "$file" > "$STATE/file"
+sleep 1
+if ! running; then
+    unload_audio
+    notify -u critical "Recording failed" "See $STATE/log"
+    exit 1
+fi
+notify "Recording" "${out:-screen} → $file  (Super+Shift+R to stop)"
