@@ -42,6 +42,7 @@ load_conf() {
     fi
     GPU_GEN="${GPU_GEN:-new}"
     AI_BACKEND="${AI_BACKEND:-auto}"
+    ENABLE_BLUETOOTH="${ENABLE_BLUETOOTH:-no}"   # config lama belum punya baris ini
 
     case "$CPU" in amd|intel) ;; *) die "CPU='$CPU' tidak valid (amd | intel)" ;; esac
     case "$GPU" in amd|nvidia|intel|vm) ;; *) die "GPU='$GPU' tidak valid (amd | nvidia | intel | vm)" ;; esac
@@ -185,6 +186,7 @@ install_packages() {
     # shellcheck disable=SC2207
     pkgs+=($(gpu_packages))
     if [ "$ENABLE_SSH" = "yes" ]; then pkgs+=(openssh openssh-dinit); fi
+    if [ "$ENABLE_BLUETOOTH" = "yes" ]; then pkgs+=(bluez bluez-utils bluez-dinit bluetui); fi
     pacman -S --needed --noconfirm "${pkgs[@]}"
 }
 
@@ -263,6 +265,14 @@ enable_services() {
     else
         rm -f /etc/dinit.d/boot.d/sshd
     fi
+    if [ "$ENABLE_BLUETOOTH" = "yes" ]; then
+        [ -e /etc/dinit.d/bluetoothd ] || warn "service dinit 'bluetoothd' tidak ada -- cek: ls /etc/dinit.d | grep -i blue"
+        ln -sf /etc/dinit.d/bluetoothd /etc/dinit.d/boot.d/
+        # kebijakan D-Bus BlueZ mengizinkan grup lp -> bluetoothctl/bluetui tanpa "Access denied"
+        usermod -aG lp "$PUBLIC_USER"
+    else
+        rm -f /etc/dinit.d/boot.d/bluetoothd
+    fi
 }
 
 run_profile_hooks() {
@@ -315,6 +325,9 @@ setup_public_home() {
            -e 's/spawn, foot$/spawn, kitty/' \
            -e '/^bind = mod+w, wallpapers/d' "$AC"
     { echo; cat "$T/config/aro/overrides.conf"; } >> "$AC"
+    if [ "$ENABLE_BLUETOOTH" = "yes" ]; then
+        printf '\nbind = mod+b, spawn, kitty -e bluetui\n' >> "$AC"
+    fi
     # Tambahan aro per profil (profiles/<p>/aro.conf), hanya profil yang aktif
     local pr
     for pr in $PROFILES; do

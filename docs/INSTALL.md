@@ -159,9 +159,29 @@ Tambahan dari repo ini:
 | `Ctrl+Alt+Del` | Menu Shutdown / Reboot (opsi pertama **Batal** + peringatan kalau training/GPU berjalan) |
 | `Super+e` | File manager (superfile) |
 | `Super+n` | Atur jaringan (nmtui) |
+| `Super+b` | Bluetooth: scan, pair, connect (`bluetui`) — hanya kalau `ENABLE_BLUETOOTH="yes"` |
 | `Super+Shift+c` | Cheatsheet keybind aro + superfile (dibaca dari config aktif) |
 | `Super+u` | Menu update: pilih satu item (lihat bagian 5a) |
 | `Super+Ctrl+u` | Update semua yang ada update-nya (konfirmasi, default **Batal**) |
+
+## 4b. Bluetooth (`ENABLE_BLUETOOTH`)
+
+`ENABLE_BLUETOOTH="yes"` memasang `bluez bluez-utils bluez-dinit bluetui`,
+mengaktifkan service `bluetoothd`, menambah user umum ke grup `lp` (kebijakan
+D-Bus BlueZ), dan menulis bind `Super+B` → `bluetui`. Audio Bluetooth tidak
+butuh paket tambahan (PipeWire + WirePlumber di core); headset muncul sebagai
+output audio setelah connect. `"no"` mematikan service dan bind (paket tidak
+di-uninstall).
+
+Cek setelah reboot:
+```
+dinitctl status bluetoothd
+rfkill list bluetooth        # "Soft blocked: yes" -> rfkill unblock bluetooth
+bluetoothctl show            # sebagai user umum
+```
+
+Catatan akun bersama: siapa pun yang memakai akun umum bisa pair perangkat.
+Kalau tidak diinginkan, biarkan `"no"`.
 
 ## 5. Admin & update
 
