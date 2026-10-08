@@ -246,15 +246,11 @@ install_superfile() {
 install_system_files() {
     # Script utilitas ke /usr/local/bin: milik root, tidak bisa diubah PUBLIC_USER
     install -m755 "$REPO_DIR"/core/bin/* /usr/local/bin/
-    # Entry launcher (fuzzel) untuk alat terminal: superfile, nmtui, bluetui
+    # Entry launcher (fuzzel): superfile + Pengaturan (Jaringan, Bluetooth, Monitor
+    # digabung di aro-settings). network/bluetooth.desktop versi lama dibuang.
     install -d /usr/local/share/applications
-    install -m644 "$REPO_DIR"/core/desktop/superfile.desktop "$REPO_DIR"/core/desktop/network.desktop \
-        /usr/local/share/applications/
-    if [ "$ENABLE_BLUETOOTH" = "yes" ]; then
-        install -m644 "$REPO_DIR"/core/desktop/bluetooth.desktop /usr/local/share/applications/
-    else
-        rm -f /usr/local/share/applications/bluetooth.desktop
-    fi
+    install -m644 "$REPO_DIR"/core/desktop/*.desktop /usr/local/share/applications/
+    rm -f /usr/local/share/applications/network.desktop /usr/local/share/applications/bluetooth.desktop
     # Helper root menu update (Super+U). Sudoers WAJIB divalidasi dulu:
     # file sudoers rusak bisa mengunci sudo sepenuhnya.
     install -o root -g root -m755 "$REPO_DIR"/core/sbin/* /usr/local/sbin/

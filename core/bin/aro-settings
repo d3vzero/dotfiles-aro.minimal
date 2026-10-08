@@ -1,0 +1,16 @@
+#!/bin/bash
+# aro-settings -- menu Pengaturan (fuzzel): Jaringan, Bluetooth, Monitor.
+# Dibuka dari launcher (Super+D -> "Pengaturan").
+items="Jaringan          Wi-Fi dan koneksi (nmtui)"
+if command -v bluetui >/dev/null; then
+    items+=$'\n'"Bluetooth         scan, pair, connect (bluetui)"
+fi
+items+=$'\n'"Monitor           resolusi dan refresh rate"
+
+choice="$(printf '%s\n' "$items" | fuzzel --dmenu --font monospace:size=11 \
+          --width 55 --lines 6 --prompt 'Pengaturan ❯ ')" || exit 0
+case "$choice" in
+    Jaringan*)  exec kitty -e nmtui ;;
+    Bluetooth*) exec kitty -e bluetui ;;
+    Monitor*)   exec monitor-mode menu ;;
+esac

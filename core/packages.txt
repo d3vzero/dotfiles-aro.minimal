@@ -20,6 +20,7 @@ xdg-desktop-portal-gtk
 xdg-utils
 kitty
 fuzzel
+wlr-randr               # ganti resolusi/refresh monitor (monitor-mode)
 mako
 pacman-contrib   # checkupdates (menu update Super+U)
 libnotify     # notify-send (sung-yt, script lain)

@@ -170,6 +170,28 @@ Tambahan dari repo ini:
 | `Super+u` | Menu update: pilih satu item (lihat bagian 5a) |
 | `Super+Ctrl+u` | Update semua yang ada update-nya (konfirmasi, default **Batal**) |
 
+## 4a. Pengaturan & monitor
+
+`Super+D` → **Pengaturan** membuka menu: **Jaringan** (nmtui), **Bluetooth**
+(bluetui, kalau `ENABLE_BLUETOOTH="yes"`), dan **Monitor**.
+
+**Monitor** menampilkan daftar resolusi + refresh rate (dari `MONITOR_MODES`
+di config, atau semua mode yang dilaporkan monitor kalau kosong) beserta rasio
+(16:10 / 16:9). Setelah memilih, muncul konfirmasi **Pertahankan / Kembalikan**;
+tanpa jawaban dalam 15 detik layar kembali ke mode sebelumnya (pengaman kalau
+monitor menolak mode). Mode yang dipertahankan disimpan per user
+(`~/.local/state/aro-monitor/mode`) dan dipasang lagi setiap login.
+
+Mode yang tidak ada di daftar EDID monitor (mis. 2560x1440 di panel 16:10)
+dipasang sebagai *custom mode*. Panel 16:10 biasanya menarik gambar 16:9 ke
+layar penuh (gepeng) kecuali menu OSD monitor diatur ke rasio asli.
+
+Contoh workstation (panel 2560x1600, 60/240/300 Hz):
+```
+MONITOR_MODES="2560x1600@60 2560x1600@240 2560x1600@300 2560x1440@60 2560x1440@240 2560x1440@300"
+```
+Dari terminal: `monitor-mode apply 2560x1440@240`.
+
 ## 4b. Bluetooth (`ENABLE_BLUETOOTH`)
 
 `ENABLE_BLUETOOTH="yes"` memasang `bluez bluez-utils bluez-dinit bluetui`,
