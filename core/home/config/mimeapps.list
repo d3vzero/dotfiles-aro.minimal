@@ -1,9 +1,88 @@
 [Default Applications]
+# dokumen
 application/pdf=org.pwmt.zathura.desktop
-text/plain=org.xfce.mousepad.desktop
+# office (profil office)
 application/vnd.openxmlformats-officedocument.wordprocessingml.document=onlyoffice.desktop
 application/vnd.openxmlformats-officedocument.spreadsheetml.sheet=onlyoffice.desktop
 application/vnd.openxmlformats-officedocument.presentationml.presentation=onlyoffice.desktop
 application/msword=onlyoffice.desktop
 application/vnd.ms-excel=onlyoffice.desktop
 application/vnd.ms-powerpoint=onlyoffice.desktop
+application/vnd.oasis.opendocument.text=onlyoffice.desktop
+application/vnd.oasis.opendocument.spreadsheet=onlyoffice.desktop
+application/vnd.oasis.opendocument.presentation=onlyoffice.desktop
+text/csv=onlyoffice.desktop
+# teks & kode
+text/plain=org.xfce.mousepad.desktop
+text/markdown=org.xfce.mousepad.desktop
+text/x-log=org.xfce.mousepad.desktop
+text/x-python=org.xfce.mousepad.desktop
+text/x-csrc=org.xfce.mousepad.desktop
+text/x-chdr=org.xfce.mousepad.desktop
+text/x-c++src=org.xfce.mousepad.desktop
+text/x-shellscript=org.xfce.mousepad.desktop
+application/x-shellscript=org.xfce.mousepad.desktop
+application/json=org.xfce.mousepad.desktop
+application/x-yaml=org.xfce.mousepad.desktop
+text/x-yaml=org.xfce.mousepad.desktop
+application/toml=org.xfce.mousepad.desktop
+text/x-toml=org.xfce.mousepad.desktop
+application/xml=org.xfce.mousepad.desktop
+text/xml=org.xfce.mousepad.desktop
+application/x-desktop=org.xfce.mousepad.desktop
+text/x-makefile=org.xfce.mousepad.desktop
+text/x-cmake=org.xfce.mousepad.desktop
+# gambar
+image/png=imv.desktop
+image/jpeg=imv.desktop
+image/gif=imv.desktop
+image/webp=imv.desktop
+image/bmp=imv.desktop
+image/tiff=imv.desktop
+image/svg+xml=imv.desktop
+image/avif=imv.desktop
+image/heic=imv.desktop
+image/x-portable-pixmap=imv.desktop
+# video
+video/mp4=mpv.desktop
+video/x-matroska=mpv.desktop
+video/webm=mpv.desktop
+video/quicktime=mpv.desktop
+video/x-msvideo=mpv.desktop
+video/mpeg=mpv.desktop
+video/ogg=mpv.desktop
+video/x-flv=mpv.desktop
+video/3gpp=mpv.desktop
+# audio
+audio/mpeg=mpv.desktop
+audio/flac=mpv.desktop
+audio/x-flac=mpv.desktop
+audio/ogg=mpv.desktop
+audio/wav=mpv.desktop
+audio/x-wav=mpv.desktop
+audio/mp4=mpv.desktop
+audio/aac=mpv.desktop
+audio/opus=mpv.desktop
+audio/x-m4a=mpv.desktop
+audio/webm=mpv.desktop
+# arsip -> archive-open (Extract / Show contents)
+application/zip=archive.desktop
+application/x-tar=archive.desktop
+application/gzip=archive.desktop
+application/x-gzip=archive.desktop
+application/x-compressed-tar=archive.desktop
+application/x-bzip2=archive.desktop
+application/x-bzip2-compressed-tar=archive.desktop
+application/x-xz=archive.desktop
+application/x-xz-compressed-tar=archive.desktop
+application/zstd=archive.desktop
+application/x-zstd-compressed-tar=archive.desktop
+application/x-7z-compressed=archive.desktop
+application/x-rar=archive.desktop
+application/vnd.rar=archive.desktop
+application/x-lzma=archive.desktop
+application/x-lzma-compressed-tar=archive.desktop
+application/x-zip-compressed=archive.desktop
+application/java-archive=archive.desktop
+# folder
+inode/directory=superfile.desktop

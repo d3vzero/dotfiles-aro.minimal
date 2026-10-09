@@ -1,0 +1,44 @@
+#!/bin/bash
+# media-key ACTION -- media & volume keys.
+#   play | next | prev | stop   -> playerctl (MPRIS: Sung, Firefox, mpv)
+#   up | down | mute            -> wpctl (PipeWire default output), max 100%
+# Shows one notification that is replaced on each press (no stacking).
+set -uo pipefail
+ID_FILE="${XDG_RUNTIME_DIR:-/tmp}/media-key.notify-id"
+
+osd() {       # osd TITLE BODY [percent]
+    local id new hint=()
+    id="$(cat "$ID_FILE" 2>/dev/null || echo 0)"
+    [ -n "${3:-}" ] && hint=(-h "int:value:$3")
+    new="$(notify-send -a Media -t 1500 -p -r "$id" "${hint[@]}" "$1" "$2" 2>/dev/null)" \
+        && echo "$new" > "$ID_FILE"
+}
+
+now_playing() {
+    sleep 0.4
+    local t; t="$(playerctl metadata --format '{{artist}} — {{title}}' 2>/dev/null)"
+    [ -n "$t" ] && osd "$1" "$t"
+}
+
+volume_osd() {
+    local v pct
+    v="$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null)"      # "Volume: 0.45 [MUTED]"
+    pct="$(awk '{ printf "%d", $2 * 100 + 0.5 }' <<<"$v")"
+    case "$v" in
+        *MUTED*) osd "Volume muted" "$pct%" "$pct" ;;
+        *)       osd "Volume" "$pct%" "$pct" ;;
+    esac
+}
+
+case "${1:-}" in
+    play) playerctl play-pause 2>/dev/null || osd "Media" "No player running"
+          now_playing "$(playerctl status 2>/dev/null || echo Media)" ;;
+    next) playerctl next 2>/dev/null && now_playing "Next" ;;
+    prev) playerctl previous 2>/dev/null && now_playing "Previous" ;;
+    stop) playerctl stop 2>/dev/null && osd "Media" "Stopped" ;;
+    up)   wpctl set-mute @DEFAULT_AUDIO_SINK@ 0
+          wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+ && volume_osd ;;
+    down) wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%- && volume_osd ;;
+    mute) wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle && volume_osd ;;
+    *) sed -n '2,5p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac

@@ -26,6 +26,8 @@ slurp                   # pilih area screenshot
 wl-clipboard            # salin screenshot ke clipboard
 wf-recorder             # rekam layar (Super+Shift+R)
 libpulse                # pactl: mixer audio rekaman
+playerctl               # tombol media (MPRIS: Sung, Firefox, mpv)
+mpv-mpris               # mpv bisa dikontrol playerctl
 mako
 pacman-contrib   # checkupdates (menu update Super+U)
 libnotify     # notify-send (sung-yt, script lain)
@@ -35,8 +37,10 @@ polkit
 udisks2
 udiskie
 
-# editor teks
+# editor teks, viewer gambar & video (default dari superfile / xdg-open)
 mousepad
+imv
+mpv
 
 # arsip
 zip

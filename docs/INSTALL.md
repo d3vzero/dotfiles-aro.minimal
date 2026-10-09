@@ -169,6 +169,8 @@ Tambahan dari repo ini:
 | `Super+Shift+c` | Cheatsheet keybind aro + superfile (dibaca dari config aktif) |
 | `Super+Shift+s` | Screenshot: menu Window (default, Enter) / Region / Full screen → `~/Pictures/Screenshot` + clipboard |
 | `Super+Shift+r` | Mulai/stop rekam layar (resolusi aktif, audio desktop + mic, .mp4) → `~/Movies/Casual` |
+| Play/Pause · Next · Prev · Stop | tombol multimedia keyboard, atau `Super+P` · `Super+]` · `Super+[` · `Super+Shift+P` (Sung, Firefox, mpv lewat MPRIS) |
+| Volume naik · turun · mute | tombol multimedia keyboard, atau `Super+F12` · `Super+F11` · `Super+F10` (maks. 100%, notifikasi level) |
 | `Super+u` | Menu update: pilih satu item (lihat bagian 5a) |
 | `Super+Ctrl+u` | Update semua yang ada update-nya (konfirmasi, default **Batal**) |
 
@@ -203,6 +205,25 @@ Dari terminal: `monitor-mode apply 2560x1600@240` (tanpa menyimpan).
   `h264_nvenc`, amd/intel → `h264_vaapi`, lainnya `libx264`. FPS dari
   `RECORD_FPS` (default 60; monitor 240/300 Hz tidak direkam sepenuh itu).
   Log kalau gagal: `$XDG_RUNTIME_DIR/casual-record/log`.
+
+## 4d. Membuka file (superfile / xdg-open)
+
+Enter di superfile memakai aplikasi default dari `~/.config/mimeapps.list`
+(`core/home/config/mimeapps.list`), bukan Firefox:
+
+| Jenis | Dibuka dengan |
+|---|---|
+| PDF | zathura |
+| Word/Excel/PowerPoint, ODF, CSV | OnlyOffice (profil office) |
+| Teks & kode (txt, md, sh, py, json, yaml, toml, xml, log, …) | Mousepad |
+| Gambar (png, jpg, gif, webp, svg, …) | imv |
+| Video & audio | mpv |
+| Arsip (zip, tar, tar.gz/xz/zst/bz2, 7z, rar, …) | `archive-open`: menu **Extract here** / **Extract to folder** / **Show contents** |
+| Folder | superfile |
+
+Jenis yang tidak terdaftar tetap jatuh ke aplikasi default sistem (biasanya Firefox).
+Tambahkan baris `tipe/mime=aplikasi.desktop` ke file itu lalu jalankan `update.sh`.
+Cek tipe sebuah file: `xdg-mime query filetype FILE`.
 
 ## 4b. Bluetooth (`ENABLE_BLUETOOTH`)
 

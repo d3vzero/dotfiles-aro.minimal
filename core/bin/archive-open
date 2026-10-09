@@ -1,0 +1,40 @@
+#!/bin/bash
+# archive-open FILE -- what Enter on an archive does (superfile / xdg-open):
+# a small menu instead of handing the file to the browser.
+#   Extract here | Extract to folder "<name>" | Show contents
+set -uo pipefail
+f="${1:?usage: archive-open FILE}"
+[ -f "$f" ] || exit 1
+f="$(readlink -f "$f")"; dir="$(dirname "$f")"; base="$(basename "$f")"
+notify() { notify-send -a Archive "$@" 2>/dev/null || true; }
+
+case "$base" in                              # name without the archive extension
+    *.tar.gz|*.tar.xz|*.tar.bz2|*.tar.zst|*.tar.lz|*.tar.lzma) name="${base%.tar.*}" ;;
+    *.tgz|*.tbz2|*.txz|*.tzst) name="${base%.*}" ;;
+    *.*) name="${base%.*}" ;;
+    *) name="$base" ;;
+esac
+
+extract_to() {                               # extract_to DEST -> 0 on success
+    mkdir -p "$1"
+    case "${base,,}" in
+        *.7z|*.rar) 7z x -y -o"$1" "$f" >/dev/null ;;
+        *) bsdtar -xf "$f" -C "$1" 2>/dev/null || 7z x -y -o"$1" "$f" >/dev/null ;;
+    esac
+}
+
+choice="$(printf 'Extract here\nExtract to folder "%s"\nShow contents\n' "$name" | \
+          fuzzel --dmenu --lines 3 --width 55 --prompt "$base ❯ ")" || exit 0
+case "$choice" in
+    "Extract here")
+        if extract_to "$dir"; then notify "Extracted" "$base → $dir"
+        else notify -u critical "Extract failed" "$base"; fi ;;
+    "Extract to folder"*)
+        dest="$dir/$name"; n=1
+        while [ -e "$dest" ]; do dest="$dir/$name ($n)"; n=$((n + 1)); done
+        if extract_to "$dest"; then notify "Extracted" "$base → $dest"
+        else rmdir "$dest" 2>/dev/null; notify -u critical "Extract failed" "$base"; fi ;;
+    "Show contents")
+        exec kitty --title "$base" sh -c '
+            case "$1" in *.7z|*.rar|*.7Z|*.RAR) 7z l "$1" ;; *) bsdtar -tvf "$1" || 7z l "$1" ;; esac | less' _ "$f" ;;
+esac
