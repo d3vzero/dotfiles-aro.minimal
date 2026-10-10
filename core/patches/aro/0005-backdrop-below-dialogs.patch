@@ -1,0 +1,77 @@
+diff --git a/src/compositor/aro.c b/src/compositor/aro.c
+index e9e4941..03a37b4 100644
+--- a/src/compositor/aro.c
++++ b/src/compositor/aro.c
+@@ -126,27 +126,55 @@ static bool views_same_client(struct aro_view *a, struct aro_view *b)
+ 	       wl_resource_get_client(sa->resource) == wl_resource_get_client(sb->resource);
+ }
+ 
+-static bool view_over_fullscreen(struct aro_server *s, struct aro_view *v)
++static struct aro_view *view_over_fullscreen(struct aro_server *s, struct aro_view *v)
+ {
+ 	struct aro_view *f;
+ 	wl_list_for_each(f, &s->views, link) {
+ 		if (f != v && f->mapped && f->fullscreen && f->output == v->output &&
+ 		    f->workspace == v->workspace && views_same_client(f, v))
+-			return true;
++			return f;
+ 	}
++	return NULL;
++}
++
++/*
++ * A "backdrop": an X11 transient (dialog) that covers nearly the whole screen.
++ * Wine/Proton launchers (Kuro SDK, ...) put one behind their login boxes; on
++ * Windows it is see-through, here it is an opaque sheet. Keep it directly
++ * above its owner and below the app's real dialogs, even when it is clicked.
++ */
++static bool view_is_backdrop(struct aro_view *v)
++{
++#ifdef ARO_XWAYLAND
++	if (!v->xsurface || !v->xsurface->parent || !v->output)
++		return false;
++	ly_box u = usable_area(v->output);
++	return u.w > 0 && u.h > 0 &&
++	       v->xsurface->width * 100 >= u.w * 85 &&
++	       v->xsurface->height * 100 >= u.h * 85;
++#else
++	(void)v;
+ 	return false;
++#endif
+ }
+ 
+ static void view_fullscreen_restack(struct aro_server *s, struct aro_view *v)
+ {
+ 	if (!v || !v->mapped || !v->floating || v->fullscreen || !v->frame_tree)
+ 		return;
+-	struct wlr_scene_tree *want = view_over_fullscreen(s, v) ? s->l_fullscreen
+-	                                                         : s->l_float;
++	struct aro_view *owner = view_over_fullscreen(s, v);
++	struct wlr_scene_tree *want = owner ? s->l_fullscreen : s->l_float;
+ 	if (v->frame_tree->node.parent != want)
+ 		wlr_scene_node_reparent(&v->frame_tree->node, want);
+-	if (want == s->l_fullscreen)
++	if (view_is_backdrop(v)) {
++		if (owner)
++			wlr_scene_node_place_above(&v->frame_tree->node,
++			                           &owner->frame_tree->node);
++		else
++			wlr_scene_node_lower_to_bottom(&v->frame_tree->node);
++	} else if (owner) {
+ 		wlr_scene_node_raise_to_top(&v->frame_tree->node);
++	}
+ }
+ 
+ static void fullscreen_restack_all(struct aro_server *s)
+@@ -1570,7 +1598,10 @@ void view_map(struct wl_listener *l, void *data)
+ 	/* don't focus hidden windows */
+ 	view_set_visible(v, here);
+ 	fullscreen_restack_all(s);
+-	if (here)
++	/* a backdrop never takes focus from a dialog of its own app */
++	bool keep = view_is_backdrop(v) && s->focused && s->focused != v &&
++	            s->focused->floating && views_same_client(s->focused, v);
++	if (here && !keep)
+ 		aro_focus(s, v);
+ 	aro_arrange(s);
+ }
