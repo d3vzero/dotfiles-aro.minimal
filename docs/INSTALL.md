@@ -269,6 +269,16 @@ Ganti profil: edit `PROFILES` di `/etc/dotfiles-aro.minimal.conf`, lalu jalankan
 > adalah sumber kebenaran. Perubahan langsung di home `Assy` akan hilang;
 > ubah di repo lalu jalankan `update.sh`.
 
+### Driver NVIDIA ditahan otomatis
+
+Arch (`extra`/`multilib`) biasanya merilis driver NVIDIA baru beberapa hari
+sebelum Artix `world`. Selama jeda itu `lib32-nvidia-utils` (profil daily)
+meminta `nvidia-utils` baru, sementara `nvidia-open-dkms` masih versi lama →
+pacman menolak upgrade. `update.sh` dan menu `Super+U` mendeteksinya dan
+**menahan seluruh paket driver** di versi terpasang untuk run itu (pesan
+`driver NVIDIA ditahan`); driver naik bersama setelah Artix menyusul.
+Tidak perlu `IgnorePkg` manual di `pacman.conf`.
+
 ## 5a. Menu update (Super+U) — untuk user umum
 
 `Assy` bisa memperbarui sendiri tanpa sudo; bagian sistem meminta

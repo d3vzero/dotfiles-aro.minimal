@@ -149,6 +149,24 @@ gpu_kernel_params() {
 # Baca daftar paket: satu paket per baris, '#' = komentar, baris kosong diabaikan
 pkg_list() { awk '{ sub(/#.*/, ""); gsub(/[[:space:]]+/, "") } NF' "$@"; }
 
+# Driver NVIDIA: Arch (extra/multilib) biasanya merilis versi baru beberapa hari
+# sebelum Artix [world]. Selama jeda itu lib32-nvidia-utils (multilib, profil
+# daily) meminta nvidia-utils baru dari extra, sementara nvidia-open-dkms tetap
+# dari world -> versi driver bentrok dan pacman menolak upgrade. Selama versinya
+# berbeda, seluruh paket driver ditahan di versi terpasang (hanya untuk run itu).
+NVIDIA_STACK="nvidia-utils lib32-nvidia-utils opencl-nvidia lib32-opencl-nvidia nvidia-open-dkms"
+nvidia_hold() {     # cetak paket yang ditahan (kosong = tidak ada); butuh db tersinkron
+    [ "$GPU" = nvidia ] || return 0
+    pacman -Q lib32-nvidia-utils >/dev/null 2>&1 || has_profile daily || return 0
+    local multi dkms
+    multi="$(pacman -Si lib32-nvidia-utils 2>/dev/null | awk '/^Version/ { print $3; exit }')"
+    dkms="$(pacman -Si nvidia-open-dkms 2>/dev/null | awk '/^Version/ { print $3; exit }')"
+    if [ -n "$multi" ] && [ -n "$dkms" ] && [ "$multi" != "$dkms" ]; then
+        echo "$NVIDIA_STACK"
+    fi
+}
+NVIDIA_HELD=""
+
 enable_repos() {
     pacman -S --needed --noconfirm artix-archlinux-support
     # [extra] wajib: freecad & ttf-caladea hanya ada di sana
@@ -167,7 +185,14 @@ enable_repos() {
     fi
     pacman-key --init
     pacman-key --populate archlinux
-    pacman -Syu --noconfirm
+    pacman -Sy --noconfirm
+    NVIDIA_HELD="$(nvidia_hold)"
+    if [ -n "$NVIDIA_HELD" ]; then
+        warn "driver NVIDIA ditahan: multilib $(pacman -Si lib32-nvidia-utils | awk '/^Version/ { print $3; exit }'), world $(pacman -Si nvidia-open-dkms | awk '/^Version/ { print $3; exit }') -- naik bersama setelah Artix menyusul"
+        pacman -Su --noconfirm --ignore "${NVIDIA_HELD// /,}"
+    else
+        pacman -Su --noconfirm
+    fi
     if has_profile daily; then
         pacman -S --needed --noconfirm core/expat
     fi
@@ -187,6 +212,18 @@ install_packages() {
     pkgs+=($(gpu_packages))
     if [ "$ENABLE_SSH" = "yes" ]; then pkgs+=(openssh openssh-dinit); fi
     if [ "$ENABLE_BLUETOOTH" = "yes" ]; then pkgs+=(bluez bluez-utils bluez-dinit bluetui); fi
+    # driver NVIDIA yang sedang ditahan dan sudah terpasang tidak diminta lagi
+    # (kalau diminta, pacman mencoba menaikkannya dan bentrok)
+    if [ -n "${NVIDIA_HELD:-}" ]; then
+        local keep=() q
+        for q in "${pkgs[@]}"; do
+            if [[ " $NVIDIA_HELD " == *" $q "* ]] && pacman -Q "$q" >/dev/null 2>&1; then
+                continue
+            fi
+            keep+=("$q")
+        done
+        pkgs=("${keep[@]}")
+    fi
     pacman -S --needed --noconfirm "${pkgs[@]}"
 }
 

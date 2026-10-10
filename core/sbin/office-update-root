@@ -14,7 +14,20 @@ gh_latest() {
 
 up_system() {
     echo "==> Sistem (pacman -Syu)"
-    pacman -Syu || return 1
+    pacman -Sy || return 1
+    # driver NVIDIA: tahan kalau multilib (lib32) dan world (dkms) beda versi
+    # -- logika sama dengan nvidia_hold() di lib/apply.sh
+    local gpu multi dkms ign=""
+    gpu="$( . /etc/dotfiles-aro.minimal.conf 2>/dev/null; echo "${GPU:-}" )"
+    if [ "$gpu" = nvidia ] && pacman -Q lib32-nvidia-utils >/dev/null 2>&1; then
+        multi="$(pacman -Si lib32-nvidia-utils 2>/dev/null | awk '/^Version/ { print $3; exit }')"
+        dkms="$(pacman -Si nvidia-open-dkms 2>/dev/null | awk '/^Version/ { print $3; exit }')"
+        if [ -n "$multi" ] && [ -n "$dkms" ] && [ "$multi" != "$dkms" ]; then
+            ign="nvidia-utils,lib32-nvidia-utils,opencl-nvidia,lib32-opencl-nvidia,nvidia-open-dkms"
+            echo ">> Driver NVIDIA ditahan (multilib $multi, world $dkms): naik bersama setelah Artix menyusul."
+        fi
+    fi
+    pacman -Su ${ign:+--ignore "$ign"} || return 1
     # kernel baru terpasang → folder modul kernel yang sedang jalan hilang
     if [ ! -d "/usr/lib/modules/$(uname -r)" ]; then
         echo ">> Kernel diperbarui: REBOOT dianjurkan (Ctrl+Alt+Del → Reboot)."
