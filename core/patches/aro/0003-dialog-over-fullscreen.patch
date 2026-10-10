@@ -1,0 +1,92 @@
+diff --git a/src/compositor/aro.c b/src/compositor/aro.c
+index ce3469a..05236e7 100644
+--- a/src/compositor/aro.c
++++ b/src/compositor/aro.c
+@@ -107,6 +107,55 @@ struct aro_output *aro_focused_output(struct aro_server *s)
+ 
+ static void focus_apply(struct aro_server *s, struct aro_view *v);
+ 
++/*
++ * popup_during_fullscreen "smart" (sway's default): a floating window of the
++ * same client as the fullscreen window on its workspace is drawn above it.
++ * Without this a fullscreen Wine/Proton game hides its own login and launcher
++ * dialogs, and focusing them only seems to bounce back to the game.
++ */
++static bool views_same_client(struct aro_view *a, struct aro_view *b)
++{
++#ifdef ARO_XWAYLAND
++	/* every X11 window shares the Xwayland connection: compare pids */
++	if (a->xsurface || b->xsurface)
++		return a->xsurface && b->xsurface &&
++		       a->xsurface->pid == b->xsurface->pid;
++#endif
++	struct wlr_surface *sa = view_surface(a), *sb = view_surface(b);
++	return sa && sb && sa->resource && sb->resource &&
++	       wl_resource_get_client(sa->resource) == wl_resource_get_client(sb->resource);
++}
++
++static bool view_over_fullscreen(struct aro_server *s, struct aro_view *v)
++{
++	struct aro_view *f;
++	wl_list_for_each(f, &s->views, link) {
++		if (f != v && f->mapped && f->fullscreen && f->output == v->output &&
++		    f->workspace == v->workspace && views_same_client(f, v))
++			return true;
++	}
++	return false;
++}
++
++static void view_fullscreen_restack(struct aro_server *s, struct aro_view *v)
++{
++	if (!v || !v->mapped || !v->floating || v->fullscreen || !v->frame_tree)
++		return;
++	struct wlr_scene_tree *want = view_over_fullscreen(s, v) ? s->l_fullscreen
++	                                                         : s->l_float;
++	if (v->frame_tree->node.parent != want)
++		wlr_scene_node_reparent(&v->frame_tree->node, want);
++	if (want == s->l_fullscreen)
++		wlr_scene_node_raise_to_top(&v->frame_tree->node);
++}
++
++static void fullscreen_restack_all(struct aro_server *s)
++{
++	struct aro_view *v;
++	wl_list_for_each(v, &s->views, link)
++		view_fullscreen_restack(s, v);
++}
++
+ /* pointer constraints and text inputs both follow keyboard focus */
+ void keyboard_focus_changed(struct aro_server *s)
+ {
+@@ -157,6 +206,7 @@ static void focus_apply(struct aro_server *s, struct aro_view *v)
+ 	ui_frame_focus(v, true);
+ 	view_activate(v, true);
+ 	wlr_scene_node_raise_to_top(&v->frame_tree->node);
++	view_fullscreen_restack(s, v);
+ 
+ 	if (v->output && v->output->bar.tree)
+ 		bar_update(&v->output->bar, v->output);
+@@ -577,6 +627,7 @@ void view_set_fullscreen(struct aro_server *s, struct aro_view *v,
+ 	/* restore float size after fullscreen */
+ 	if (!fullscreen)
+ 		view_float_configure_once(v);
++	fullscreen_restack_all(s);      /* its dialogs go above / back below */
+ 	aro_arrange(s);
+ }
+ 
+@@ -1503,6 +1554,7 @@ void view_map(struct wl_listener *l, void *data)
+ 
+ 	/* don't focus hidden windows */
+ 	view_set_visible(v, here);
++	fullscreen_restack_all(s);
+ 	if (here)
+ 		aro_focus(s, v);
+ 	aro_arrange(s);
+@@ -1557,6 +1609,7 @@ void view_unmap(struct wl_listener *l, void *data)
+ 		}
+ 		aro_focus(s, next ? next->user : NULL);
+ 	}
++	fullscreen_restack_all(s);      /* a fullscreen owner left: dialogs go back */
+ 	aro_arrange(s);
+ }
+ 
