@@ -1,0 +1,84 @@
+diff --git a/src/compositor/actions.c b/src/compositor/actions.c
+index d39378b..718f4ec 100644
+--- a/src/compositor/actions.c
++++ b/src/compositor/actions.c
+@@ -277,8 +277,10 @@ void run_action(struct aro_server *s, const struct q_bind *b)
+ 			view_set_floating(s, f, !f->floating);
+ 		return;
+ 	case Q_FULLSCREEN:
+-		if (f)
++		if (f) {
++			f->fs_pinned = !f->fullscreen;  /* on: pinned; off: released */
+ 			view_set_fullscreen(s, f, !f->fullscreen);
++		}
+ 		return;
+ 	case Q_SWITCH:
+ 		switcher_step(s, b->num);
+diff --git a/src/compositor/aro.c b/src/compositor/aro.c
+index 05236e7..e9e4941 100644
+--- a/src/compositor/aro.c
++++ b/src/compositor/aro.c
+@@ -640,8 +640,15 @@ void view_request_fullscreen(struct wl_listener *l, void *data)
+ 	/* shared by both shells; an X11 view has no xdg toplevel. Before
+ 	 * map the state is read by wants_fullscreen instead. */
+ 	if (v->xsurface) {
+-		if (v->mapped)
+-			view_set_fullscreen(v->server, v, v->xsurface->fullscreen);
++		if (!v->mapped)
++			return;
++		if (!v->xsurface->fullscreen && v->fullscreen && v->fs_pinned) {
++			/* pinned: say "fullscreen" again instead of giving it up */
++			wlr_xwayland_surface_set_fullscreen(v->xsurface, true);
++			aro_arrange(v->server);
++			return;
++		}
++		view_set_fullscreen(v->server, v, v->xsurface->fullscreen);
+ 		return;
+ 	}
+ #endif
+@@ -652,6 +659,10 @@ void view_request_fullscreen(struct wl_listener *l, void *data)
+ 			wlr_xdg_surface_schedule_configure(v->toplevel->base);
+ 		return;
+ 	}
++	if (!v->toplevel->requested.fullscreen && v->fullscreen && v->fs_pinned) {
++		wlr_xdg_surface_schedule_configure(v->toplevel->base);  /* keep it */
++		return;
++	}
+ 	view_set_fullscreen(v->server, v, v->toplevel->requested.fullscreen);
+ }
+ 
+@@ -780,8 +791,10 @@ static void view_rules_reapply(struct aro_view *v)
+ 		aro_arrange(s);
+ 	if (r.workspace != Q_RULE_UNSET && r.workspace != last.workspace)
+ 		view_send_to(s, v, r.workspace);
+-	if (r.fullscreen != Q_RULE_UNSET && r.fullscreen != last.fullscreen)
++	if (r.fullscreen != Q_RULE_UNSET && r.fullscreen != last.fullscreen) {
++		v->fs_pinned = true;
+ 		view_set_fullscreen(s, v, true);
++	}
+ 	if (r.scratch == 1 && last.scratch != 1 && !v->scratch)
+ 		scratch_toggle(s, v);
+ }
+@@ -1534,6 +1547,8 @@ void view_map(struct wl_listener *l, void *data)
+ 	}
+ 
+ 	/* handle pre-map fullscreen request */
++	if (r.fullscreen == 1)
++		v->fs_pinned = true;
+ 	if (!v->stashed && (r.fullscreen == 1 ||
+ 	    (v->impl->wants_fullscreen && v->impl->wants_fullscreen(v))))
+ 		view_set_fullscreen(s, v, true);
+diff --git a/src/compositor/aro.h b/src/compositor/aro.h
+index 722138f..62bbc0b 100644
+--- a/src/compositor/aro.h
++++ b/src/compositor/aro.h
+@@ -119,6 +119,9 @@ struct aro_view {
+ 	double scroll_w;        /* layout = scroll: this column's width share; 0 = the default */
+ 	double scroll_w_prev;   /* what maximize goes back to */
+ 	bool fullscreen;
++	/* fullscreen chosen by the user (Super+F) or a rule: the client may not
++	 * take it back. Wine games in "windowed" mode otherwise undo it at once */
++	bool fs_pinned;
+ 
+ 	/* float_follow: client controls floating size after initial configure */
+ 	bool float_follow;
