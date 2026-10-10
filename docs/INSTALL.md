@@ -244,6 +244,23 @@ bluetoothctl show            # sebagai user umum
 Catatan akun bersama: siapa pun yang memakai akun umum bisa pair perangkat.
 Kalau tidak diinginkan, biarkan `"no"`.
 
+## 4e. Wi-Fi untuk akun umum (`PUBLIC_NETWORK_CONTROL`)
+
+Default polkit NetworkManager: akun umum boleh menyambung/memutus dan scan
+Wi-Fi, tetapi **menyimpan koneksi baru** (`settings.modify.system`) butuh
+autentikasi admin, dan aro tidak punya polkit agent → nmtui gagal dengan
+"Insufficient privileges".
+
+- `"yes"`: akun umum masuk grup `network`, dan
+  `/etc/polkit-1/rules.d/50-networkmanager.rules` memberi izin **hanya** untuk
+  action itu ke grup `network`. Berlaku setelah logout/login (grup baru).
+- `"no"`: rule dihapus, akun umum keluar dari grup `network`. Admin menyiapkan
+  koneksi Wi-Fi; akun umum hanya bisa menyambung/memutus koneksi tersimpan.
+
+Cek (sebagai akun umum):
+
+    nmcli general permissions | grep modify.system    # yes
+
 ## 5. Admin & update
 
 Admin login di tty lain: `Ctrl+Alt+F2` → login `Admin`.

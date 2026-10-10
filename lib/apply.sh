@@ -43,6 +43,7 @@ load_conf() {
     GPU_GEN="${GPU_GEN:-new}"
     AI_BACKEND="${AI_BACKEND:-auto}"
     ENABLE_BLUETOOTH="${ENABLE_BLUETOOTH:-no}"   # config lama belum punya baris ini
+    PUBLIC_NETWORK_CONTROL="${PUBLIC_NETWORK_CONTROL:-no}"
 
     case "$CPU" in amd|intel) ;; *) die "CPU='$CPU' tidak valid (amd | intel)" ;; esac
     case "$GPU" in amd|nvidia|intel|vm) ;; *) die "GPU='$GPU' tidak valid (amd | nvidia | intel | vm)" ;; esac
@@ -330,6 +331,18 @@ enable_services() {
         usermod -aG lp "$PUBLIC_USER"
     else
         rm -f /etc/dinit.d/boot.d/bluetoothd
+    fi
+    # Wi-Fi baru dari akun umum: default polkit NM untuk settings.modify.system
+    # adalah "auth", dan aro tidak punya polkit agent -> nmtui gagal menyimpan
+    # ("Insufficient privileges"). Rule ini memberi YES untuk grup network saja.
+    if [ "$PUBLIC_NETWORK_CONTROL" = "yes" ]; then
+        groupadd -f network
+        usermod -aG network "$PUBLIC_USER"
+        install -Dm644 "$REPO_DIR/core/polkit/50-networkmanager.rules" \
+            /etc/polkit-1/rules.d/50-networkmanager.rules
+    else
+        rm -f /etc/polkit-1/rules.d/50-networkmanager.rules
+        gpasswd -d "$PUBLIC_USER" network >/dev/null 2>&1 || true
     fi
 }
 

@@ -1,0 +1,9 @@
+// dotfiles-aro.minimal: PUBLIC_NETWORK_CONTROL="yes"
+// Anggota grup "network" (akun umum) boleh menyimpan koneksi baru lewat
+// nmtui/nmcli tanpa polkit agent. Hanya action ini; yang lain tetap default.
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.NetworkManager.settings.modify.system" &&
+        subject.isInGroup("network")) {
+        return polkit.Result.YES;
+    }
+});
