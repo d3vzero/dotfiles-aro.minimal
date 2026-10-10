@@ -1,0 +1,309 @@
+diff --git a/src/compositor/aro.c b/src/compositor/aro.c
+index 21943f2..ce3469a 100644
+--- a/src/compositor/aro.c
++++ b/src/compositor/aro.c
+@@ -2457,10 +2457,12 @@ int main(int argc, char *argv[])
+ 	s.l_preview    = wlr_scene_tree_create(&s.scene->tree);
+ 	s.l_float      = wlr_scene_tree_create(&s.scene->tree);
+ 	s.l_overview   = wlr_scene_tree_create(&s.scene->tree);
+-	s.l_unmanaged  = wlr_scene_tree_create(&s.scene->tree);
+ 	s.l_bar        = wlr_scene_tree_create(&s.scene->tree);
+ 	s.l_top        = wlr_scene_tree_create(&s.scene->tree);
+ 	s.l_fullscreen = wlr_scene_tree_create(&s.scene->tree);
++	/* X11 override-redirect above fullscreen (as in sway): a fullscreen
++	 * Wine/Proton game must not hide its own launcher and login popups */
++	s.l_unmanaged  = wlr_scene_tree_create(&s.scene->tree);
+ 	s.l_notify     = wlr_scene_tree_create(&s.scene->tree);
+ 	s.l_overlay    = wlr_scene_tree_create(&s.scene->tree);
+ 	if (!s.root_bg || !s.l_background || !s.l_bottom || !s.l_tiled ||
+diff --git a/src/compositor/aro.h b/src/compositor/aro.h
+index a156fbe..722138f 100644
+--- a/src/compositor/aro.h
++++ b/src/compositor/aro.h
+@@ -101,6 +101,8 @@ struct aro_view {
+ 	struct wl_listener associate;
+ 	struct wl_listener dissociate;
+ 	struct wl_listener request_configure;
++	struct wl_listener request_activate;      /* X11 _NET_ACTIVE_WINDOW */
++	struct wl_listener set_override_redirect; /* X11: managed <-> unmanaged */
+ #endif
+ 	ly_node *node;                  /* our leaf; NULL while floating */
+ 	struct aro_output *output;   /* which screen it lives on */
+diff --git a/src/compositor/xwayland.c b/src/compositor/xwayland.c
+index b4fc998..8c43ed6 100644
+--- a/src/compositor/xwayland.c
++++ b/src/compositor/xwayland.c
+@@ -12,6 +12,8 @@
+ #include <stdlib.h>
+ 
+ #include <wlr/types/wlr_compositor.h>
++#include <wlr/types/wlr_keyboard.h>
++#include <wlr/types/wlr_seat.h>
+ #include <wlr/xwayland.h>
+ #include <wlr/util/log.h>
+ 
+@@ -165,9 +167,48 @@ struct aro_unmanaged {
+ 	struct wl_listener map;
+ 	struct wl_listener unmap;
+ 	struct wl_listener request_configure;
++	struct wl_listener set_geometry;
++	struct wl_listener request_activate;
++	struct wl_listener set_override_redirect;
+ 	struct wl_listener destroy;
+ };
+ 
++static struct aro_view *new_managed(struct aro_server *s,
++                                    struct wlr_xwayland_surface *xsurface);
++static struct aro_unmanaged *new_unmanaged(struct aro_server *s,
++                                           struct wlr_xwayland_surface *xsurface);
++
++/* give the keyboard to an X11 surface without touching the managed focus */
++static void x11_keyboard_enter(struct aro_server *s, struct wlr_surface *surface)
++{
++	if (!surface || s->focused_layer)
++		return;
++	wlr_xwayland_set_seat(s->xwayland, s->seat);
++	struct wlr_keyboard *kb = wlr_seat_get_keyboard(s->seat);
++	if (kb)
++		wlr_seat_keyboard_notify_enter(s->seat, surface, kb->keycodes,
++		                               kb->num_keycodes, &kb->modifiers);
++	else
++		wlr_seat_keyboard_notify_enter(s->seat, surface, NULL, 0, NULL);
++}
++
++/* an override-redirect surface went away while it held the keyboard */
++static void x11_keyboard_restore(struct aro_server *s, struct wlr_xwayland_surface *x)
++{
++	if (!x->surface || s->seat->keyboard_state.focused_surface != x->surface)
++		return;
++	/* a parent that wants focus gets it back (menus inside menus) */
++	if (x->parent && x->parent->surface &&
++	    wlr_xwayland_surface_override_redirect_wants_focus(x->parent)) {
++		x11_keyboard_enter(s, x->parent->surface);
++		return;
++	}
++	if (s->focused && s->focused->mapped)
++		x11_keyboard_enter(s, view_surface(s->focused));
++	else
++		wlr_seat_keyboard_notify_clear_focus(s->seat);
++}
++
+ static void unmanaged_map(struct wl_listener *l, void *data)
+ {
+ 	struct aro_unmanaged *u = wl_container_of(l, u, map);
+@@ -178,6 +219,10 @@ static void unmanaged_map(struct wl_listener *l, void *data)
+ 	if (u->tree)
+ 		wlr_scene_node_set_position(&u->tree->node,
+ 		                            u->xsurface->x, u->xsurface->y);
++
++	/* launchers, login boxes and menus that ask for the keyboard get it */
++	if (wlr_xwayland_surface_override_redirect_wants_focus(u->xsurface))
++		x11_keyboard_enter(u->server, u->xsurface->surface);
+ }
+ 
+ static void unmanaged_unmap(struct wl_listener *l, void *data)
+@@ -187,6 +232,33 @@ static void unmanaged_unmap(struct wl_listener *l, void *data)
+ 	if (u->tree)
+ 		wlr_scene_node_destroy(&u->tree->node);
+ 	u->tree = NULL;
++	x11_keyboard_restore(u->server, u->xsurface);
++}
++
++/* override-redirect surfaces move themselves */
++static void unmanaged_set_geometry(struct wl_listener *l, void *data)
++{
++	struct aro_unmanaged *u = wl_container_of(l, u, set_geometry);
++	(void)data;
++	if (u->tree)
++		wlr_scene_node_set_position(&u->tree->node,
++		                            u->xsurface->x, u->xsurface->y);
++}
++
++/* _NET_ACTIVE_WINDOW from an override-redirect surface: only honoured for
++ * the client that already has focus (the same rule sway uses) */
++static void unmanaged_request_activate(struct wl_listener *l, void *data)
++{
++	struct aro_unmanaged *u = wl_container_of(l, u, request_activate);
++	struct wlr_xwayland_surface *x = u->xsurface;
++	struct aro_server *s = u->server;
++	(void)data;
++	if (!x->surface || !x->surface->mapped)
++		return;
++	struct aro_view *f = s->focused;
++	if (f && (!f->xsurface || f->xsurface->pid != x->pid))
++		return;
++	x11_keyboard_enter(s, x->surface);
+ }
+ 
+ static void unmanaged_request_configure(struct wl_listener *l, void *data)
+@@ -228,17 +300,48 @@ static void unmanaged_destroy(struct wl_listener *l, void *data)
+ 	wl_list_remove(&u->associate.link);
+ 	wl_list_remove(&u->dissociate.link);
+ 	wl_list_remove(&u->request_configure.link);
++	wl_list_remove(&u->set_geometry.link);
++	wl_list_remove(&u->request_activate.link);
++	wl_list_remove(&u->set_override_redirect.link);
+ 	wl_list_remove(&u->destroy.link);
+ 	wl_list_remove(&u->link);
+ 	free(u);
+ }
+ 
+-static void new_unmanaged(struct aro_server *s,
+-                          struct wlr_xwayland_surface *xsurface)
++/* Wine flips windows between managed and override-redirect after creating
++ * them. Rebuild the surface on the other side, like sway does. */
++static void unmanaged_set_override_redirect(struct wl_listener *l, void *data)
++{
++	struct aro_unmanaged *u = wl_container_of(l, u, set_override_redirect);
++	struct wlr_xwayland_surface *x = u->xsurface;
++	struct aro_server *s = u->server;
++	(void)data;
++
++	bool associated = x->surface != NULL;
++	bool mapped = associated && x->surface->mapped;
++
++	if (u->tree)
++		unmanaged_unmap(&u->unmap, NULL);
++	wl_list_remove(&u->map.link);
++	wl_list_remove(&u->unmap.link);
++	wl_list_init(&u->map.link);
++	wl_list_init(&u->unmap.link);
++	unmanaged_destroy(&u->destroy, NULL);   /* frees u */
++
++	struct aro_view *v = new_managed(s, x);
++	if (!v || !associated)
++		return;
++	v->associate.notify(&v->associate, NULL);
++	if (mapped)
++		view_map(&v->map, NULL);
++}
++
++static struct aro_unmanaged *new_unmanaged(struct aro_server *s,
++                                           struct wlr_xwayland_surface *xsurface)
+ {
+ 	struct aro_unmanaged *u = calloc(1, sizeof *u);
+ 	if (!u)
+-		return;
++		return NULL;
+ 	u->server = s;
+ 	u->xsurface = xsurface;
+ 	wl_list_init(&u->map.link);
+@@ -250,10 +353,17 @@ static void new_unmanaged(struct aro_server *s,
+ 	wl_signal_add(&xsurface->events.dissociate, &u->dissociate);
+ 	u->request_configure.notify = unmanaged_request_configure;
+ 	wl_signal_add(&xsurface->events.request_configure, &u->request_configure);
++	u->set_geometry.notify = unmanaged_set_geometry;
++	wl_signal_add(&xsurface->events.set_geometry, &u->set_geometry);
++	u->request_activate.notify = unmanaged_request_activate;
++	wl_signal_add(&xsurface->events.request_activate, &u->request_activate);
++	u->set_override_redirect.notify = unmanaged_set_override_redirect;
++	wl_signal_add(&xsurface->events.set_override_redirect, &u->set_override_redirect);
+ 	u->destroy.notify = unmanaged_destroy;
+ 	wl_signal_add(&xsurface->events.destroy, &u->destroy);
+ 
+ 	wl_list_insert(&s->unmanaged, &u->link);
++	return u;
+ }
+ 
+ /* ── managed X11 windows ───────────────────────────────────────────────── */
+@@ -292,6 +402,42 @@ static void xwl_request_configure(struct wl_listener *l, void *data)
+ 	}
+ }
+ 
++/* _NET_ACTIVE_WINDOW: a window asks to be focused (Wine raises its login and
++ * launcher dialogs this way). Honoured when it is on screen. */
++static void xwl_request_activate(struct wl_listener *l, void *data)
++{
++	struct aro_view *v = wl_container_of(l, v, request_activate);
++	(void)data;
++	if (!v->mapped || v->server->focused == v)
++		return;
++	if (view_visible(v))
++		aro_focus(v->server, v);
++}
++
++static void xwl_destroy(struct wl_listener *l, void *data);
++
++static void xwl_set_override_redirect(struct wl_listener *l, void *data)
++{
++	struct aro_view *v = wl_container_of(l, v, set_override_redirect);
++	struct wlr_xwayland_surface *x = v->xsurface;
++	struct aro_server *s = v->server;
++	(void)data;
++
++	bool associated = x->surface != NULL;
++	bool mapped = associated && x->surface->mapped;
++
++	if (v->mapped)
++		view_unmap(&v->unmap, NULL);
++	xwl_destroy(&v->destroy, NULL);         /* frees v */
++
++	struct aro_unmanaged *u = new_unmanaged(s, x);
++	if (!u || !associated)
++		return;
++	unmanaged_associate(&u->associate, NULL);
++	if (mapped)
++		unmanaged_map(&u->map, NULL);
++}
++
+ static void xwl_associate(struct wl_listener *l, void *data)
+ {
+ 	struct aro_view *v = wl_container_of(l, v, associate);
+@@ -342,6 +488,8 @@ static void xwl_destroy(struct wl_listener *l, void *data)
+ 	wl_list_remove(&v->associate.link);
+ 	wl_list_remove(&v->dissociate.link);
+ 	wl_list_remove(&v->request_configure.link);
++	wl_list_remove(&v->request_activate.link);
++	wl_list_remove(&v->set_override_redirect.link);
+ 	wl_list_remove(&v->set_title.link);
+ 	wl_list_remove(&v->set_app_id.link);
+ 	wl_list_remove(&v->request_fullscreen.link);
+@@ -357,14 +505,18 @@ void new_xwayland_surface(struct wl_listener *l, void *data)
+ 	struct aro_server *s = wl_container_of(l, s, new_xwayland_surface);
+ 	struct wlr_xwayland_surface *xsurface = data;
+ 
+-	if (xsurface->override_redirect) {
++	if (xsurface->override_redirect)
+ 		new_unmanaged(s, xsurface);
+-		return;
+-	}
++	else
++		new_managed(s, xsurface);
++}
+ 
++static struct aro_view *new_managed(struct aro_server *s,
++                                    struct wlr_xwayland_surface *xsurface)
++{
+ 	struct aro_view *v = calloc(1, sizeof *v);
+ 	if (!v)
+-		return;
++		return NULL;
+ 	v->server = s;
+ 	v->impl = &xwl_impl;
+ 	v->csd = false;     /* X11 clients expect us to decorate them */
+@@ -374,7 +526,7 @@ void new_xwayland_surface(struct wl_listener *l, void *data)
+ 	if (!ui_frame_create(v, s->l_tiled)) {
+ 		wlr_log(WLR_ERROR, "could not build a frame for an X11 window");
+ 		free(v);
+-		return;
++		return NULL;
+ 	}
+ 	v->frame_tree->node.data = v;   /* view_at() walks up looking for this */
+ 	wlr_scene_node_set_enabled(&v->frame_tree->node, false);
+@@ -400,11 +552,16 @@ void new_xwayland_surface(struct wl_listener *l, void *data)
+ 	wl_signal_add(&xsurface->events.request_resize, &v->request_resize);
+ 	v->request_configure.notify = xwl_request_configure;
+ 	wl_signal_add(&xsurface->events.request_configure, &v->request_configure);
++	v->request_activate.notify = xwl_request_activate;
++	wl_signal_add(&xsurface->events.request_activate, &v->request_activate);
++	v->set_override_redirect.notify = xwl_set_override_redirect;
++	wl_signal_add(&xsurface->events.set_override_redirect, &v->set_override_redirect);
+ 	v->destroy.notify = xwl_destroy;
+ 	wl_signal_add(&xsurface->events.destroy, &v->destroy);
+ 
+ 	v->id = ++s->next_view_id;
+ 	wl_list_insert(&s->views, &v->link);
++	return v;
+ }
+ 
+ void xwayland_ready(struct wl_listener *l, void *data)
