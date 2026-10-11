@@ -1,0 +1,18 @@
+# Tema hitam putih (dotfiles-aro.minimal)
+font=Sans 10
+background-color=#0a0a0aeb
+text-color=#e8e8e8
+border-color=#ffffff
+border-size=1
+border-radius=0
+padding=10
+progress-color=over #ffffff33
+default-timeout=6000
+
+[urgency=low]
+border-color=#555555
+
+[urgency=critical]
+border-color=#ffffff
+border-size=2
+default-timeout=0

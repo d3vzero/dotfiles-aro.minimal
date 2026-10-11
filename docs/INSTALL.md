@@ -261,6 +261,22 @@ Cek (sebagai akun umum):
 
     nmcli general permissions | grep modify.system    # yes
 
+## 4f. Tema hitam putih
+
+Semua warna dari repo (ditimpa tiap `update.sh`):
+
+| Aplikasi | File |
+|---|---|
+| aro (bingkai, aksen, notifikasi, latar) | `core/home/config/aro/overrides.conf` (blok tema di awal) |
+| mako (notifikasi) | `core/home/config/mako/config` |
+| fuzzel (launcher, Settings, menu) | `core/home/config/fuzzel/fuzzel.ini` |
+| kitty (+ superfile, nmtui, bluetui) | `core/home/config/kitty/kitty.conf` (warna ANSI abu-abu) |
+| zathura (PDF) | `core/home/config/zathura/zathurarc` (Ctrl+R = balik warna halaman) |
+| GTK (Firefox, Mousepad, dialog file) | `core/home/config/gtk-{3,4}.0/settings.ini` (Adwaita gelap) |
+
+Tidak ikut: aplikasi dengan tema sendiri (OnlyOffice, Steam, Sung, OBS) dan
+isi halaman web.
+
 ## 5. Admin & update
 
 Admin login di tty lain: `Ctrl+Alt+F2` → login `Admin`.

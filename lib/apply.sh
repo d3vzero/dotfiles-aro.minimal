@@ -365,7 +365,8 @@ run_profile_hooks() {
 setup_public_home() {
     local H="$PUBLIC_HOME" T="$REPO_DIR/core/home"
     install -d "$H/.config/aro" "$H/.config/fuzzel" "$H/.config/kitty" \
-               "$H/.local/share/applications"
+               "$H/.config/mako" "$H/.config/zathura" "$H/.config/gtk-3.0" \
+               "$H/.config/gtk-4.0" "$H/.local/share/applications"
 
     # .bash_profile
     {
@@ -420,6 +421,11 @@ setup_public_home() {
 
     cp "$T/config/fuzzel/fuzzel.ini" "$H/.config/fuzzel/fuzzel.ini"
     cp "$T/config/kitty/kitty.conf"  "$H/.config/kitty/kitty.conf"
+    # tema hitam putih: notifikasi, PDF viewer, aplikasi GTK (Firefox, Mousepad)
+    cp "$T/config/mako/config"        "$H/.config/mako/config"
+    cp "$T/config/zathura/zathurarc"  "$H/.config/zathura/zathurarc"
+    cp "$T/config/gtk-3.0/settings.ini" "$H/.config/gtk-3.0/settings.ini"
+    cp "$T/config/gtk-4.0/settings.ini" "$H/.config/gtk-4.0/settings.ini"
     # mimeapps.list ditulis langsung (xdg-mime sebagai user gagal kalau ~/.config milik root)
     cp "$T/config/mimeapps.list"     "$H/.config/mimeapps.list"
 
