@@ -1,0 +1,52 @@
+diff --git a/src/ui/ui.c b/src/ui/ui.c
+index 7ba542a..f445918 100644
+--- a/src/ui/ui.c
++++ b/src/ui/ui.c
+@@ -152,9 +152,37 @@ void ui_frame_hold_opacity(struct aro_view *v)
+ }
+ 
+ /* round client content corners and fade it; new buffers come with each commit */
++/*
++ * A fullscreen window whose buffer is smaller than the screen (a game left in
++ * its own "windowed" mode at 2560x1440 on a 2560x1600 panel, say) is centred
++ * on black, like sway does, instead of sticking to the top-left corner.
++ */
++static void fullscreen_center(struct aro_view *v, int bw, int bh)
++{
++	struct wlr_surface *s = view_surface(v);
++	int sw = s ? s->current.width : 0, sh = s ? s->current.height : 0;
++	int dx = 0, dy = 0;
++	if (sw > 0 && sh > 0 && (sw < bw || sh < bh)) {
++		dx = sw < bw ? (bw - sw) / 2 : 0;
++		dy = sh < bh ? (bh - sh) / 2 : 0;
++	}
++	wlr_scene_node_set_position(&v->content->node, dx, dy);
++	wlr_scene_node_set_position(&v->popups->node, dx, dy);
++	if (dx || dy) {
++		static const float black[4] = { 0, 0, 0, 1 };
++		wlr_scene_rect_set_color(v->bg, black);
++		wlr_scene_rect_set_size(v->bg, bw, bh);
++		wlr_scene_node_set_position(&v->bg->node, 0, 0);
++	}
++	wlr_scene_node_set_enabled(&v->bg->node, dx || dy);
++}
++
+ void ui_frame_clip_content(struct aro_view *v)
+ {
+ 	paint_content(v, frame_opacity(v, v->server->focused == v));
++	/* the buffer size can change on any commit: keep a fullscreen one centred */
++	if (v->fullscreen && v->output)
++		fullscreen_center(v, v->output->box.w, v->output->box.h);
+ }
+ 
+ bool ui_frame_create(struct aro_view *v, struct wlr_scene_tree *parent)
+@@ -315,8 +343,7 @@ void ui_frame_geometry(struct aro_view *v, ly_box b)
+ 		place_blur(v, (ly_box){ 0, 0, b.w, b.h }, 0);
+ #endif
+ 		wlr_scene_node_set_enabled(&v->content->node, true);   /* edge clipping may have hidden it */
+-		wlr_scene_node_set_position(&v->content->node, 0, 0);
+-		wlr_scene_node_set_position(&v->popups->node, 0, 0);
++		fullscreen_center(v, b.w, b.h);
+ 		if (v->surface_tree)
+ 			wlr_scene_subsurface_tree_set_clip(&v->surface_tree->node,
+ 				&(struct wlr_box){ g.x, g.y, b.w, b.h });
