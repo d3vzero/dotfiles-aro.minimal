@@ -1,0 +1,75 @@
+diff --git a/src/compositor/aro.c b/src/compositor/aro.c
+index 03a37b4..1081dcc 100644
+--- a/src/compositor/aro.c
++++ b/src/compositor/aro.c
+@@ -636,6 +636,8 @@ void view_set_fullscreen(struct aro_server *s, struct aro_view *v,
+ {
+ 	if (!v || v->fullscreen == fullscreen)
+ 		return;
++	if (!fullscreen)
++		v->fs_w = v->fs_h = 0;   /* own smaller size only lives inside fullscreen */
+ 
+ 	v->fullscreen = fullscreen;
+ 
+diff --git a/src/compositor/aro.h b/src/compositor/aro.h
+index 62bbc0b..c266f3b 100644
+--- a/src/compositor/aro.h
++++ b/src/compositor/aro.h
+@@ -122,6 +122,9 @@ struct aro_view {
+ 	/* fullscreen chosen by the user (Super+F) or a rule: the client may not
+ 	 * take it back. Wine games in "windowed" mode otherwise undo it at once */
+ 	bool fs_pinned;
++	/* X11 window inside a pinned fullscreen that asked for a smaller size
++	 * (a game's own windowed resolution): kept at that size, centred. 0 = full */
++	int fs_w, fs_h;
+ 
+ 	/* float_follow: client controls floating size after initial configure */
+ 	bool float_follow;
+diff --git a/src/compositor/xwayland.c b/src/compositor/xwayland.c
+index 8c43ed6..0b7dd45 100644
+--- a/src/compositor/xwayland.c
++++ b/src/compositor/xwayland.c
+@@ -23,8 +23,18 @@
+ 
+ static void xwl_configure(struct aro_view *v, int x, int y, int w, int h)
+ {
+-	if (v->xsurface)
+-		wlr_xwayland_surface_configure(v->xsurface, x, y, w, h);
++	if (!v->xsurface)
++		return;
++	/* pinned fullscreen + smaller size of its own: centre that size on the
++	 * screen (the X position too, so the game's popups line up) */
++	if (v->fullscreen && v->fs_w > 0 && v->fs_h > 0 &&
++	    v->fs_w <= w && v->fs_h <= h) {
++		x += (w - v->fs_w) / 2;
++		y += (h - v->fs_h) / 2;
++		w = v->fs_w;
++		h = v->fs_h;
++	}
++	wlr_xwayland_surface_configure(v->xsurface, x, y, w, h);
+ }
+ 
+ static void xwl_close(struct aro_view *v)
+@@ -389,6 +399,22 @@ static void xwl_request_configure(struct wl_listener *l, void *data)
+ 		return;
+ 	}
+ 
++	/* pinned fullscreen: a smaller size is the game's windowed resolution;
++	 * keep it (centred, black around it) instead of forcing the screen size */
++	if (v->fullscreen && v->fs_pinned && v->output) {
++		ly_box o = v->output->box;
++		if (ev->width > 0 && ev->height > 0 &&
++		    ev->width <= o.w && ev->height <= o.h &&
++		    (ev->width < o.w || ev->height < o.h)) {
++			v->fs_w = ev->width;
++			v->fs_h = ev->height;
++		} else {
++			v->fs_w = v->fs_h = 0;
++		}
++		xwl_configure(v, o.x, o.y, o.w, o.h);
++		return;
++	}
++
+ 	/* floating X11 resize */
+ 	ly_box b = view_target(v), c;
+ 	ui_frame_content_box(v, b, &c);
