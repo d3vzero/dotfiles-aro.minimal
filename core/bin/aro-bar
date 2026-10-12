@@ -42,10 +42,10 @@ done
 AMDGPU=""
 if command -v nvidia-smi >/dev/null && nvidia-smi -L >/dev/null 2>&1; then
     nvidia-smi --query-gpu=utilization.gpu,temperature.gpu,memory.used \
-        --format=csv,noheader,nounits -lms $((INTERVAL * 1000)) 2>/dev/null |
+        --format=csv,noheader,nounits -lms $((INTERVAL * 1000)) 2>/dev/null 9>&- |
     while IFS=', ' read -r u t m; do
         printf 'GPU %s%% %s° %s\n' "$u" "$t" "$(human $((m * 1048576)))" > "$GPUF.tmp" && mv -f "$GPUF.tmp" "$GPUF"
-    done &
+    done 9>&- &           # lock fd tidak diwariskan: restart aro-bar tidak terhalang
     GPUPID=$!
 else
     for d in /sys/class/drm/card*/device; do
