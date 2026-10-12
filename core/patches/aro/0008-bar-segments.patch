@@ -1,19 +1,54 @@
+diff --git a/src/compositor/arrange.c b/src/compositor/arrange.c
+index 8a6e15b..801bf29 100644
+--- a/src/compositor/arrange.c
++++ b/src/compositor/arrange.c
+@@ -21,7 +21,10 @@ ly_box usable_area(struct aro_output *o)
+ 	ly_box u = o->usable;
+ 	if (u.w <= 0 || u.h <= 0)
+ 		u = o->box;
+-	u.h -= bar_height(&o->bar);
++	int bh = bar_height(&o->bar);
++	u.h -= bh;
++	if (o->server->cfg.bar_top)
++		u.y += bh;              /* bar on top: windows start below it */
+ 	return u;
+ }
+ 
 diff --git a/src/compositor/config.c b/src/compositor/config.c
-index c0cf8c0..63c6e75 100644
+index c0cf8c0..fb7b4ef 100644
 --- a/src/compositor/config.c
 +++ b/src/compositor/config.c
-@@ -436,6 +436,7 @@ void config_defaults(struct aro_config *c)
+@@ -436,6 +436,8 @@ void config_defaults(struct aro_config *c)
  	c->nscroll_presets = 3;
  	c->bar = TH_BAR;
  	c->bar_battery = true;
 +	c->nbar_seg = 0;
++	c->bar_top = false;
  	c->opacity = c->opacity_unfocused = 1.0;
  	c->blur_passes = 2;
  	c->blur_radius = 5;
-@@ -1491,6 +1492,23 @@ bool config_load(struct aro_config *c, const char *path)
+@@ -478,6 +480,7 @@ void config_defaults(struct aro_config *c)
+ 	};
+ 	c->theme.font = strdup(TH_FONT);
+ 	c->theme.font_small = strdup(TH_FONT_SMALL);
++	c->theme.bar_font = strdup(TH_FONT_SMALL);
+ 
+ 	install_default_binds(c);
+ }
+@@ -1180,6 +1183,7 @@ static const struct theme_key theme_keys[] = {
+ 
+ 	{ "font",       K_STR, T(font),       0, 0 },
+ 	{ "font_small", K_STR, T(font_small), 0, 0 },
++	{ "bar_font",   K_STR, T(bar_font),   0, 0 },
+ };
+ #undef T
+ 
+@@ -1491,6 +1495,25 @@ bool config_load(struct aro_config *c, const char *path)
  				c->bar = b ? Q_BAR_ON : Q_BAR_OFF;
  		} else if (!strcasecmp(key, "bar_battery")) {
  			ok = parse_bool(value, &c->bar_battery);
++		} else if (!strcasecmp(key, "bar_top")) {
++			ok = parse_bool(value, &c->bar_top);
 +		} else if (!strcasecmp(key, "bar_segment")) {
 +			/* bar_segment = top|bottom left|right <name> [command ...] */
 +			char where[8], side[8], name[32];
@@ -34,11 +69,25 @@ index c0cf8c0..63c6e75 100644
  		} else if (!strcasecmp(key, "wallpaper")) {
  			/* the keywords are words, not paths: `none` never means a
  			 * file called none. ./none does, if anyone needs it. */
+@@ -1545,6 +1568,7 @@ void config_finish(struct aro_config *c)
+ {
+ 	free(c->theme.font);
+ 	free(c->theme.font_small);
++	free(c->theme.bar_font);
+ 	free(c->xkb_layout);
+ 	free(c->xkb_variant);
+ 	free(c->xkb_options);
 diff --git a/src/compositor/config.h b/src/compositor/config.h
-index 7bd8388..c42f40d 100644
+index 7bd8388..09450af 100644
 --- a/src/compositor/config.h
 +++ b/src/compositor/config.h
-@@ -168,6 +168,17 @@ struct q_theme {
+@@ -163,11 +163,23 @@ struct q_theme {
+ 	uint32_t overview_tint;
+ 
+ 	char *font, *font_small;        /* owned */
++	char *bar_font;                 /* owned; bar text (clock, segments, pills) */
+ };
+ 
  /* fixed workspace limit */
  #define ARO_MAX_WS 32
  
@@ -56,11 +105,12 @@ index 7bd8388..c42f40d 100644
  struct aro_config {
  	uint32_t modkey;        /* WLR_MODIFIER_LOGO or WLR_MODIFIER_ALT */
  
-@@ -191,6 +202,8 @@ struct aro_config {
+@@ -191,6 +203,9 @@ struct aro_config {
  	 */
  	enum q_bar bar;
  	bool bar_battery;       /* the battery left of the clock, when there is one */
 +	struct q_bar_seg bar_seg[ARO_BAR_SEGS];   /* in config order */
++	bool bar_top;                   /* bar at the top of the screen, not the bottom */
 +	int nbar_seg;
  
  	enum q_wallpaper wallpaper;
@@ -81,8 +131,26 @@ index ea2407f..500fb3b 100644
  	if (mouse_bind(s, ev))
  		return;
  
+diff --git a/src/compositor/layers.c b/src/compositor/layers.c
+index 43b951b..0bd9f1d 100644
+--- a/src/compositor/layers.c
++++ b/src/compositor/layers.c
+@@ -317,10 +317,11 @@ void arrange_layers_output(struct aro_output *o)
+ 	                    usable.width != full.width ||
+ 	                    usable.height != full.height);
+ 
+-	/* bottom of the usable area */
++	/* bottom of the usable area (or top, bar_top) */
+ 	if (o->bar.tree) {
+ 		bar_place(&o->bar, usable.x,
+-		          usable.y + usable.height - bar_height(&o->bar),
++		          o->server->cfg.bar_top ? usable.y
++		                                 : usable.y + usable.height - bar_height(&o->bar),
+ 		          usable.width, o->scale);
+ 		bar_update(&o->bar, o);
+ 	}
 diff --git a/src/ui/bar.c b/src/ui/bar.c
-index b373a97..400b1fd 100644
+index b373a97..261bf4a 100644
 --- a/src/ui/bar.c
 +++ b/src/ui/bar.c
 @@ -7,6 +7,7 @@
@@ -122,8 +190,8 @@ index b373a97..400b1fd 100644
 +		return false;
 +	line[strcspn(line, "\r\n")] = '\0';
 +	const char *t = line;
-+	*bright = (*t == '*');
-+	if (*bright)
++	*bright = (*t != '~');
++	if (*t == '~' || *t == '*')
 +		t++;
 +	snprintf(buf, n, "%s", t);
 +	return buf[0] != '\0';
@@ -153,12 +221,24 @@ index b373a97..400b1fd 100644
  /* ── the bar ───────────────────────────────────────────────────────────── */
  
  #define PILL_H 18
-@@ -146,6 +200,9 @@ bool bar_create(struct aro_bar *b, struct aro_output *o)
+@@ -137,15 +191,18 @@ bool bar_create(struct aro_bar *b, struct aro_output *o)
+ 	for (int i = 0; i < b->nws; i++) {
+ 		ui_color(th->accent, c);
+ 		b->ws[i].pill = wlr_scene_rect_create(b->tree, 1, PILL_H, c);
+-		if (!qtext_init(&b->ws[i].label, b->tree, th->font_small))
++		if (!qtext_init(&b->ws[i].label, b->tree, th->bar_font))
+ 			return false;
+ 	}
+ 	if (!qtext_init(&b->title, b->tree, th->font))
  		return false;
- 	if (!qtext_init(&b->battery, b->tree, th->font_small))
+-	if (!qtext_init(&b->clock, b->tree, th->font_small))
++	if (!qtext_init(&b->clock, b->tree, th->bar_font))
+ 		return false;
+-	if (!qtext_init(&b->battery, b->tree, th->font_small))
++	if (!qtext_init(&b->battery, b->tree, th->bar_font))
  		return false;
 +	for (int i = 0; i < ARO_BAR_SEGS; i++)
-+		if (!qtext_init(&b->seg[i].text, b->tree, th->font_small))
++		if (!qtext_init(&b->seg[i].text, b->tree, th->bar_font))
 +			return false;
  
  	return b->bg != NULL;
@@ -281,12 +361,20 @@ index b373a97..400b1fd 100644
  	if (b->tree)
  		wlr_scene_node_destroy(&b->tree->node);
  	b->tree = NULL;
-@@ -313,4 +409,6 @@ void bar_retheme(struct aro_bar *b)
+@@ -308,9 +404,11 @@ void bar_retheme(struct aro_bar *b)
+ 	for (int i = 0; i < b->nws; i++) {
+ 		ui_color(th->accent, c);
+ 		wlr_scene_rect_set_color(b->ws[i].pill, c);
+-		qtext_set_font(&b->ws[i].label, th->font_small);
++		qtext_set_font(&b->ws[i].label, th->bar_font);
+ 	}
  	qtext_set_font(&b->title, th->font);
- 	qtext_set_font(&b->clock, th->font_small);
- 	qtext_set_font(&b->battery, th->font_small);
+-	qtext_set_font(&b->clock, th->font_small);
+-	qtext_set_font(&b->battery, th->font_small);
++	qtext_set_font(&b->clock, th->bar_font);
++	qtext_set_font(&b->battery, th->bar_font);
 +	for (int i = 0; i < ARO_BAR_SEGS; i++)
-+		qtext_set_font(&b->seg[i].text, th->font_small);
++		qtext_set_font(&b->seg[i].text, th->bar_font);
  }
 diff --git a/src/ui/bar.h b/src/ui/bar.h
 index 0a2426f..a653634 100644

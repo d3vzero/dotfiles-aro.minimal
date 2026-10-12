@@ -1,9 +1,10 @@
 #!/bin/bash
 # aro-bar -- isi segmen bar aro (patch 0008, kunci bar_segment) di
-# $XDG_RUNTIME_DIR/aro-bar/<nama>, satu baris per file. Awalan '*' = terang.
+# $XDG_RUNTIME_DIR/aro-bar/<nama>, satu baris per file. Teks terang seperti jam;
+# awalan '~' = redup (mati/tidak tersambung).
 #   sysmon  CPU 12% 54°  RAM 9.4G  GPU 3% 41° 1.2G
 #   net     ↓1.2M  wifi-rumah  ↑35K
-#   bt      nama perangkat (terang) | BT (redup) | BT off
+#   bt      nama perangkat (terang) | BT (redup) | BT off (redup)
 # Dijalankan dari config aro (exec = aro-bar). Satu putaran tiap INTERVAL
 # detik dengan builtin bash; nvidia-smi satu proses yang terus berjalan;
 # nmcli/bluetoothctl hanya tiap beberapa putaran.
@@ -69,10 +70,10 @@ net_name() {   # koneksi aktif pertama selain loopback
 }
 bt_text() {
     command -v bluetoothctl >/dev/null || return 1
-    if ! bluetoothctl show 2>/dev/null | grep -q 'Powered: yes'; then echo "BT off"; return 0; fi
+    if ! bluetoothctl show 2>/dev/null | grep -q 'Powered: yes'; then echo "~BT off"; return 0; fi
     local d
     d="$(bluetoothctl devices Connected 2>/dev/null | head -n1 | cut -d' ' -f3-)"
-    if [ -n "$d" ]; then echo "*$d"; else echo "BT"; fi
+    if [ -n "$d" ]; then echo "$d"; else echo "~BT"; fi
 }
 
 read_cpu; P_IDLE=$CPU_IDLE; P_TOT=$CPU_TOT

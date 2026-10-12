@@ -273,8 +273,10 @@ Patch aro `0008-bar-segments` + script `aro-bar`:
   `bt` (nama perangkat tersambung = terang, `BT` = redup; klik → bluetui; hanya
   kalau `ENABLE_BLUETOOTH="yes"`).
 - Segmen diatur di config aro: `bar_segment = top|bottom left|right <nama> [perintah]`;
-  teksnya dibaca dari `$XDG_RUNTIME_DIR/aro-bar/<nama>` (awalan `*` = terang), jadi
-  script lain bisa menambah segmen sendiri.
+  teksnya dibaca dari `$XDG_RUNTIME_DIR/aro-bar/<nama>` (terang seperti jam; awalan
+  `~` = redup), jadi script lain bisa menambah segmen sendiri.
+- Posisi dan ukuran: `bar_top = true`, `bar_height = 36`, `bar_font = Sans 12`
+  (kunci dari patch 0008; `bar_font` default = `font_small`).
 - GPU: NVIDIA lewat satu proses `nvidia-smi -lms`; AMD lewat sysfs. Interval
   `ARO_BAR_INTERVAL` (detik, default 2).
 - Judul jendela tidak ditampilkan lagi (bar bawah, tahap berikutnya, akan
