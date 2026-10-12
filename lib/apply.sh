@@ -393,8 +393,7 @@ setup_public_home() {
     # JANGAN tulis dari nol: satu baris "bind" saja menghapus semua bind default.
     local AC="$H/.config/aro/config"
     cp /usr/share/doc/aro/config.example "$AC"
-    sed -i -e 's/^bar = true/bar = false/' \
-           -e 's/^# wallpaper = auto$/wallpaper = none/' \
+    sed -i -e 's/^# wallpaper = auto$/wallpaper = none/' \
            -e 's/spawn, foot$/spawn, kitty/' \
            -e '/^bind = mod+w, wallpapers/d' \
            -e 's/^layout = dwindle$/layout = scroll/' "$AC"
