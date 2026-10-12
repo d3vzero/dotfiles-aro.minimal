@@ -6,6 +6,7 @@
 #   net     ↓1.2M  wifi-rumah  ↑35K
 #   bt      nama perangkat (terang) | BT (redup) | BT off (redup)
 #   usb     USB <label> / USB 2 (terang, ada yang terpasang) | USB (redup)
+#   display 2560x1600@300 | DP-3 2560x1600@300  HDMI-A-1 1920x1080@60 (lebih dari satu)
 # Dijalankan dari config aro (exec = aro-bar). Satu putaran tiap INTERVAL
 # detik dengan builtin bash; nvidia-smi satu proses yang terus berjalan;
 # nmcli/bluetoothctl hanya tiap beberapa putaran.
@@ -19,7 +20,7 @@ mkdir -p "$DIR"
 exec 9>"$DIR/.lock"
 flock -n 9 || exit 0                      # satu instance saja
 
-cleanup() { [ -n "${GPUPID:-}" ] && kill "$GPUPID" 2>/dev/null; rm -f "$DIR"/sysmon "$DIR"/net "$DIR"/bt "$DIR"/usb "$GPUF"; }
+cleanup() { [ -n "${GPUPID:-}" ] && kill "$GPUPID" 2>/dev/null; rm -f "$DIR"/sysmon "$DIR"/net "$DIR"/bt "$DIR"/usb "$DIR"/display "$GPUF"; }
 trap cleanup EXIT
 trap 'exit 0' TERM INT
 
@@ -89,9 +90,20 @@ usb_text() {   # perangkat yang dipasang udiskie di /run/media/$USER
     else echo "USB $n"; fi
 }
 
+disp_text() {   # mode aktif tiap monitor (wlr-randr), dibaca tiap 10 detik
+    command -v wlr-randr >/dev/null || return 1
+    wlr-randr 2>/dev/null | awk '
+        /^[^ \t]/ { name = $1; next }
+        / px, .*current/ { split($1, wh, "x"); n++
+            out[n] = name; mode[n] = sprintf("%sx%s@%d", wh[1], wh[2], $3 + 0.5) }
+        END { if (n == 1) { print mode[1]; exit }
+              for (i = 1; i <= n; i++) printf "%s%s %s", (i > 1 ? "  " : ""), out[i], mode[i]
+              if (n) print "" }'
+}
+
 read_cpu; P_IDLE=$CPU_IDLE; P_TOT=$CPU_TOT
 read_net; P_RX=$NET_RX; P_TX=$NET_TX
-NAME="$(net_name)"; BT="$(bt_text)" || BT=""
+NAME="$(net_name)"; BT="$(bt_text)" || BT=""; DISP="$(disp_text)" || DISP=""
 n=0
 
 while [ -S "$RUN/${WAYLAND_DISPLAY:-wayland-0}" ]; do   # berhenti saat sesi aro selesai
@@ -130,4 +142,7 @@ while [ -S "$RUN/${WAYLAND_DISPLAY:-wayland-0}" ]; do   # berhenti saat sesi aro
     if [ -n "$BT" ]; then put bt "$BT"; else rm -f "$DIR/bt"; fi
 
     put usb "$(usb_text)"
+
+    (( n % 5 == 0 )) && { DISP="$(disp_text)" || DISP=""; }   # tiap 10 detik (monitor baru ikut)
+    if [ -n "$DISP" ]; then put display "$DISP"; else rm -f "$DIR/display"; fi
 done

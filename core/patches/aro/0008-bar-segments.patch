@@ -31,20 +31,21 @@ index 8a6e15b..21b4458 100644
  }
  
 diff --git a/src/compositor/config.c b/src/compositor/config.c
-index c0cf8c0..6d58e77 100644
+index c0cf8c0..c99f2dd 100644
 --- a/src/compositor/config.c
 +++ b/src/compositor/config.c
-@@ -436,6 +436,9 @@ void config_defaults(struct aro_config *c)
+@@ -436,6 +436,10 @@ void config_defaults(struct aro_config *c)
  	c->nscroll_presets = 3;
  	c->bar = TH_BAR;
  	c->bar_battery = true;
 +	c->nbar_seg = 0;
 +	c->bar_top = false;
 +	c->bar_bottom = false;
++	memset(c->ws_name, 0, sizeof c->ws_name);
  	c->opacity = c->opacity_unfocused = 1.0;
  	c->blur_passes = 2;
  	c->blur_radius = 5;
-@@ -478,6 +481,7 @@ void config_defaults(struct aro_config *c)
+@@ -478,6 +482,7 @@ void config_defaults(struct aro_config *c)
  	};
  	c->theme.font = strdup(TH_FONT);
  	c->theme.font_small = strdup(TH_FONT_SMALL);
@@ -52,7 +53,7 @@ index c0cf8c0..6d58e77 100644
  
  	install_default_binds(c);
  }
-@@ -1180,6 +1184,7 @@ static const struct theme_key theme_keys[] = {
+@@ -1180,6 +1185,7 @@ static const struct theme_key theme_keys[] = {
  
  	{ "font",       K_STR, T(font),       0, 0 },
  	{ "font_small", K_STR, T(font_small), 0, 0 },
@@ -60,7 +61,7 @@ index c0cf8c0..6d58e77 100644
  };
  #undef T
  
-@@ -1491,6 +1496,27 @@ bool config_load(struct aro_config *c, const char *path)
+@@ -1491,6 +1497,42 @@ bool config_load(struct aro_config *c, const char *path)
  				c->bar = b ? Q_BAR_ON : Q_BAR_OFF;
  		} else if (!strcasecmp(key, "bar_battery")) {
  			ok = parse_bool(value, &c->bar_battery);
@@ -68,6 +69,21 @@ index c0cf8c0..6d58e77 100644
 +			ok = parse_bool(value, &c->bar_top);
 +		} else if (!strcasecmp(key, "bar_bottom")) {
 +			ok = parse_bool(value, &c->bar_bottom);
++		} else if (!strcasecmp(key, "workspace_names")) {
++			/* workspace_names = 1 2 3 GAMES : pill labels in order, "-" = the number */
++			memset(c->ws_name, 0, sizeof c->ws_name);
++			const char *p = value;
++			for (int i = 0; i < ARO_MAX_WS && *p; i++) {
++				while (*p == ' ' || *p == '\t')
++					p++;
++				size_t len = strcspn(p, " \t");
++				if (!len)
++					break;
++				if (!(len == 1 && *p == '-'))
++					snprintf(c->ws_name[i], sizeof c->ws_name[i], "%.*s", (int)len, p);
++				p += len;
++			}
++			ok = true;
 +		} else if (!strcasecmp(key, "bar_segment")) {
 +			/* bar_segment = top|bottom left|right <name> [command ...] */
 +			char where[8], side[8], name[32];
@@ -88,7 +104,7 @@ index c0cf8c0..6d58e77 100644
  		} else if (!strcasecmp(key, "wallpaper")) {
  			/* the keywords are words, not paths: `none` never means a
  			 * file called none. ./none does, if anyone needs it. */
-@@ -1545,6 +1571,7 @@ void config_finish(struct aro_config *c)
+@@ -1545,6 +1587,7 @@ void config_finish(struct aro_config *c)
  {
  	free(c->theme.font);
  	free(c->theme.font_small);
@@ -97,7 +113,7 @@ index c0cf8c0..6d58e77 100644
  	free(c->xkb_variant);
  	free(c->xkb_options);
 diff --git a/src/compositor/config.h b/src/compositor/config.h
-index 7bd8388..b89fe5b 100644
+index 7bd8388..35e314e 100644
 --- a/src/compositor/config.h
 +++ b/src/compositor/config.h
 @@ -163,11 +163,23 @@ struct q_theme {
@@ -124,12 +140,13 @@ index 7bd8388..b89fe5b 100644
  struct aro_config {
  	uint32_t modkey;        /* WLR_MODIFIER_LOGO or WLR_MODIFIER_ALT */
  
-@@ -191,6 +203,11 @@ struct aro_config {
+@@ -191,6 +203,12 @@ struct aro_config {
  	 */
  	enum q_bar bar;
  	bool bar_battery;       /* the battery left of the clock, when there is one */
 +	struct q_bar_seg bar_seg[ARO_BAR_SEGS];   /* in config order */
 +	bool bar_top;                   /* bar at the top of the screen, not the bottom */
++	char ws_name[ARO_MAX_WS][16];   /* workspace_names: pill labels, "" = the number */
 +	bool bar_bottom;                /* with bar_top: a second bar at the bottom with the
 +	                                 * workspaces, open windows and bottom segments */
 +	int nbar_seg;
@@ -173,7 +190,7 @@ index 43b951b..6b297e4 100644
  	}
  }
 diff --git a/src/ui/bar.c b/src/ui/bar.c
-index b373a97..cbce089 100644
+index b373a97..f4aa464 100644
 --- a/src/ui/bar.c
 +++ b/src/ui/bar.c
 @@ -7,6 +7,7 @@
@@ -359,7 +376,21 @@ index b373a97..cbce089 100644
  		wlr_scene_node_set_enabled(&b->ws[i].pill->node, false);
  		qtext_show(&b->ws[i].label, shown);
  		if (!shown)
-@@ -235,24 +361,31 @@ void bar_update(struct aro_bar *b, struct aro_output *o)
+@@ -220,8 +346,11 @@ void bar_update(struct aro_bar *b, struct aro_output *o)
+ 		bool active = (i == o->cur_ws);
+ 		bool occupied = ws_occupied(o, i);
+ 
+-		char label[12];
+-		snprintf(label, sizeof label, "%d", i + 1);
++		char label[20];
++		if (s->cfg.ws_name[i][0])
++			snprintf(label, sizeof label, "%s", s->cfg.ws_name[i]);
++		else
++			snprintf(label, sizeof label, "%d", i + 1);
+ 
+ 		uint32_t fg = active ? th->bar_bg : (occupied ? th->ink : th->dim);
+ 		qtext_set(&b->ws[i].label, label, fg, b->scale, 0);
+@@ -235,24 +364,31 @@ void bar_update(struct aro_bar *b, struct aro_output *o)
  		qtext_move(&b->ws[i].label,
  		           cursor + PILL_PAD,
  		           mid - b->ws[i].label.h / 2);
@@ -401,7 +432,7 @@ index b373a97..cbce089 100644
  	const struct battery bat = s->cfg.bar_battery ? battery_get() : (struct battery){ 0 };
  	qtext_show(&b->battery, bat.present);
  	if (bat.present) {
-@@ -260,23 +393,167 @@ void bar_update(struct aro_bar *b, struct aro_output *o)
+@@ -260,23 +396,167 @@ void bar_update(struct aro_bar *b, struct aro_output *o)
  		snprintf(text, sizeof text, bat.charging ? "%d%% charging" : "%d%%", bat.percent);
  		bool low = !bat.charging && bat.percent <= 15;
  		qtext_set(&b->battery, text, low ? th->urgent : th->dim, b->scale, 0);
@@ -480,24 +511,24 @@ index b373a97..cbce089 100644
 +		}
 +		b->napp = n;
 +
-+		/* centre "pills  apps" as one group */
++		/* centre "apps  pills" as one group: open windows left of the workspaces */
 +		int pills_w = cursor > th->bar_pad ? cursor - th->bar_pad - PILL_GAP : 0;
-+		int group = pills_w + (n ? th->bar_pad * 2 + total : 0);
++		int group = total + (n ? th->bar_pad * 2 : 0) + pills_w;
 +		int gx = (b->w - group) / 2;
 +		if (gx < th->bar_pad)
 +			gx = th->bar_pad;
-+		int shift = gx - th->bar_pad;
++		int ax = gx;
++		for (int i = 0; i < n; i++) {
++			b->app[i].x = ax;
++			qtext_move(&b->app[i].text, ax, mid - b->app[i].text.h / 2);
++			ax += b->app[i].w + th->bar_pad;
++		}
++		int shift = (n ? ax + th->bar_pad : gx) - th->bar_pad;
 +		for (int i = 0; i < b->shown && i < b->nws; i++) {
 +			b->ws[i].x += shift;
 +			wlr_scene_node_set_position(&b->ws[i].pill->node, b->ws[i].x, mid - PILL_H / 2);
 +			qtext_move(&b->ws[i].label, b->ws[i].x + PILL_PAD,
 +			           mid - b->ws[i].label.h / 2);
-+		}
-+		int ax = gx + pills_w + th->bar_pad * 2;
-+		for (int i = 0; i < n; i++) {
-+			b->app[i].x = ax;
-+			qtext_move(&b->app[i].text, ax, mid - b->app[i].text.h / 2);
-+			ax += b->app[i].w + th->bar_pad;
 +		}
 +	}
  
@@ -581,7 +612,7 @@ index b373a97..cbce089 100644
  }
  
  void bar_finish(struct aro_bar *b)
-@@ -286,6 +563,13 @@ void bar_finish(struct aro_bar *b)
+@@ -286,6 +566,13 @@ void bar_finish(struct aro_bar *b)
  	qtext_finish(&b->title);
  	qtext_finish(&b->clock);
  	qtext_finish(&b->battery);
@@ -595,7 +626,7 @@ index b373a97..cbce089 100644
  	if (b->tree)
  		wlr_scene_node_destroy(&b->tree->node);
  	b->tree = NULL;
-@@ -308,9 +592,21 @@ void bar_retheme(struct aro_bar *b)
+@@ -308,9 +595,21 @@ void bar_retheme(struct aro_bar *b)
  	for (int i = 0; i < b->nws; i++) {
  		ui_color(th->accent, c);
  		wlr_scene_rect_set_color(b->ws[i].pill, c);

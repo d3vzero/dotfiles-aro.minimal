@@ -3,8 +3,11 @@
 # wlr-output-management), with confirmation and automatic revert.
 #   monitor-mode menu      pick from a list (MONITOR_MODES in the machine config,
 #                          empty = every mode the monitor reports)
-#   monitor-mode apply M   apply M (e.g. 2560x1600@240) without confirmation
-#   monitor-mode restore   apply the saved mode (run when aro starts)
+#   monitor-mode apply M [OUTPUT]  apply M (e.g. 2560x1600@240) without confirmation
+#   monitor-mode restore   apply the saved mode of every monitor (run when aro starts)
+# More than one monitor: the menu asks which one first. MONITOR_MODES only applies
+# to the main monitor (MONITOR_OUTPUT, or the first one); others list what they
+# report. Saved modes: ~/.local/state/aro-monitor/<output>.mode
 set -uo pipefail
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/aro-monitor"
 CONF=/etc/dotfiles-aro.minimal.conf
@@ -14,9 +17,17 @@ CONFIRM_SECS=15
 
 notify() { notify-send -a Display "$@" 2>/dev/null || true; }
 
-output_name() {      # MONITOR_OUTPUT dari config, atau output aktif pertama
+outputs() {          # every enabled output, one per line
+    wlr-randr 2>/dev/null | awk '/^[^ \t]/ { n = $1 } /Enabled: yes/ { print n }'
+}
+
+output_name() {      # main monitor: MONITOR_OUTPUT from the config, or the first enabled one
     if [ -n "$OUT_CONF" ]; then echo "$OUT_CONF"; return; fi
-    wlr-randr | awk '/^[^ \t]/ { n = $1 } /Enabled: yes/ { print n; exit }'
+    outputs | head -n1
+}
+
+save_mode() {        # save_mode OUTPUT MODE
+    mkdir -p "$STATE"; echo "$2" > "$STATE/$1.mode"
 }
 
 modes_of() {         # "W H refresh current(0/1)" per mode milik output $1
@@ -58,10 +69,17 @@ apply_mode() {       # apply_mode OUTPUT WxH@R  -> 0 kalau berhasil
 }
 
 cmd_menu() {
-    local o cur list choice sel prev ans
-    o="$(output_name)"; [ -n "$o" ] || { notify -u critical "Display" "No output found (wlr-randr)"; exit 1; }
+    local o cur list choice sel prev ans main
+    main="$(output_name)"; [ -n "$main" ] || { notify -u critical "Display" "No output found (wlr-randr)"; exit 1; }
+    mapfile -t outs < <(outputs)
+    o="$main"
+    if (( ${#outs[@]} > 1 )); then           # more than one monitor: pick it first
+        o="$(for x in "${outs[@]}"; do printf '%-10s %s\n' "$x" "$(current_mode "$x" | awk -F@ '{ printf "%s@%d", $1, $2 + 0.5 }')"; done |
+             fuzzel --dmenu --lines "${#outs[@]}" --width 40 --prompt 'Monitor ❯ ' | awk '{ print $1 }')"
+        [ -n "$o" ] || exit 0
+    fi
     cur="$(current_mode "$o")"
-    if [ -n "$MODES" ]; then
+    if [ -n "$MODES" ] && [ "$o" = "$main" ]; then
         list="$(printf '%s\n' $MODES)"
     else
         list="$(modes_of "$o" | awk '{ printf "%sx%s@%d\n", $1, $2, $3 + 0.5 }' | sort -t@ -k1,1r -k2,2nr -u)"
@@ -83,8 +101,8 @@ cmd_menu() {
     [ -n "$sel" ] || exit 0
     case "$choice" in *active*)
         # the active mode was picked -> just save it as the login mode
-        mkdir -p "$STATE"; echo "$sel" > "$STATE/mode"
-        notify "Display" "Saved $sel (applied again at login)"
+        save_mode "$o" "$sel"
+        notify "Display" "$o: saved $sel (applied again at login)"
         exit 0 ;;
     esac
 
@@ -95,8 +113,8 @@ cmd_menu() {
     ans="$(printf 'Keep\nRevert\n' | timeout "$CONFIRM_SECS" \
            fuzzel --dmenu --prompt "Keep $sel? (reverts in ${CONFIRM_SECS}s) ❯ ")"
     if [ "$ans" = "Keep" ]; then
-        mkdir -p "$STATE"; echo "$sel" > "$STATE/mode"
-        notify "Display" "Saved $sel (applied again at login)"
+        save_mode "$o" "$sel"
+        notify "Display" "$o: saved $sel (applied again at login)"
     else
         [ -n "$prev" ] && apply_mode "$o" "$prev"
         notify "Display" "Reverted to ${prev:-the previous mode}"
@@ -104,19 +122,25 @@ cmd_menu() {
 }
 
 cmd_restore() {
-    local m o i
-    [ -f "$STATE/mode" ] || exit 0
-    m="$(cat "$STATE/mode")"
-    for i in $(seq 1 20); do              # tunggu aro siap melayani wlr-randr
-        o="$(output_name 2>/dev/null)"; [ -n "$o" ] && break; sleep 0.5
+    local o i f m
+    for i in $(seq 1 20); do              # wait until aro answers wlr-randr
+        [ -n "$(outputs)" ] && break; sleep 0.5
     done
-    [ -n "${o:-}" ] || exit 0
-    apply_mode "$o" "$m" || notify -u critical "Display" "Saved mode $m could not be applied"
+    # older single-monitor state file -> the main monitor
+    if [ -f "$STATE/mode" ]; then
+        o="$(output_name)"; [ -n "$o" ] && mv -f "$STATE/mode" "$STATE/$o.mode"
+    fi
+    for f in "$STATE"/*.mode; do
+        [ -f "$f" ] || continue
+        o="$(basename "$f" .mode)"; m="$(cat "$f")"
+        outputs | grep -qx "$o" || continue  # that monitor is not plugged in now
+        apply_mode "$o" "$m" || notify -u critical "Display" "$o: saved mode $m could not be applied"
+    done
 }
 
 case "${1:-menu}" in
     menu)    cmd_menu ;;
-    apply)   o="$(output_name)"; apply_mode "$o" "${2:?mode, e.g. 2560x1600@240}" ;;
+    apply)   o="${3:-$(output_name)}"; apply_mode "$o" "${2:?mode, e.g. 2560x1600@240}" ;;
     restore) cmd_restore ;;
     *) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

@@ -284,6 +284,15 @@ Patch aro `0008-bar-segments` + script `aro-bar`:
   judul untuk game Proton). Jendela fokus tebal dan terang, lainnya redup. Klik
   nama = fokus ke jendela itu (pindah workspace kalau perlu); klik pill = pindah
   workspace. Segmen `bar_segment = bottom left|right ...` tampil di sini.
+- **Urutan bar bawah**: daftar jendela di kiri, lalu pill workspace (patch 0008).
+  `workspaces = 4` dan `workspace_names = 1 2 3 GAMES` (kunci patch 0008; `-` =
+  pakai nomor). Workspace 4 = game Proton (rule profil daily).
+- **Display** (paling kanan bawah): mode aktif `2560x1600@300`; lebih dari satu monitor
+  → `DP-3 2560x1600@300  HDMI-A-1 1920x1080@60` (diperbarui tiap 10 detik, monitor
+  yang baru dicolok ikut muncul). Klik → `monitor-mode menu`: pilih monitor dulu kalau
+  lebih dari satu, lalu resolusi + refresh. Mode tersimpan per monitor
+  (`~/.local/state/aro-monitor/<output>.mode`); `MONITOR_MODES` hanya untuk monitor
+  utama.
 - **USB** (kanan bawah): `USB <label>` terang kalau ada perangkat yang dipasang
   udiskie di `/run/media/$USER`, `USB 2` kalau lebih dari satu, `USB` redup kalau
   kosong. Klik → `usb-open`: superfile langsung di perangkat itu (lebih dari satu:
