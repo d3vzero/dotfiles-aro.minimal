@@ -6,6 +6,10 @@ border-color=#ffffff
 border-size=1
 border-radius=0
 padding=10
+# jarak dari tepi layar: 36 = tinggi bar atas aro (bar_height), supaya bar tidak tertutup
+anchor=top-right
+outer-margin=36,0,0,0
+margin=10
 progress-color=over #ffffff33
 default-timeout=6000
 
