@@ -1,0 +1,50 @@
+#!/bin/bash
+# split-obs-record (Super+Alt+S)
+# Khusus untuk struktur folder: ~/Videos/OBS/RAW/RecordRAW.mkv
+# Split jadi file di ~/Videos/OBS/Split/{All,Screen,Audio,Mic}/
+#
+# Asumsi track audio dari setup OBS Advanced Audio Properties:
+#   Track 1 = Desktop Audio + Mic (mixed)   -> audio index 0
+#   Track 2 = Desktop Audio saja             -> audio index 1
+#   Track 3 = Mic saja                       -> audio index 2
+
+set -e
+trap 'notify-send -u critical "OBS Split" "Gagal di tengah proses (cek terminal untuk detail error ffmpeg)"' ERR
+
+BASE_DIR="$HOME/Videos/OBS"
+RAW_FILE="$BASE_DIR/RAW/RecordRAW.mkv"
+
+if [ ! -f "$RAW_FILE" ]; then
+    notify-send -u critical "OBS Split" "Gagal: file tidak ditemukan di $RAW_FILE"
+    exit 1
+fi
+
+notify-send "OBS Split" "Mulai proses split RecordRAW.mkv..."
+
+AUDIO_TRACKS=$(ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 "$RAW_FILE" | wc -l)
+if [ "$AUDIO_TRACKS" -lt 3 ]; then
+    notify-send -u critical "OBS Split" "Peringatan: cuma $AUDIO_TRACKS track audio (butuh 3)."
+    if [ -t 0 ]; then
+        read -p "Tetap lanjut? (y/N) " confirm
+        [ "$confirm" = "y" ] || exit 1
+    else
+        exit 1
+    fi
+fi
+
+TS=$(date -r "$RAW_FILE" +%Y%m%d-%H%M%S)
+mkdir -p "$BASE_DIR/Split/All" "$BASE_DIR/Split/Screen" "$BASE_DIR/Split/Audio" "$BASE_DIR/Split/Mic"
+
+OUT_MASTER="$BASE_DIR/Split/All/master_${TS}.mkv"
+OUT_ALL="$BASE_DIR/Split/All/all_${TS}.mkv"
+OUT_SCREEN="$BASE_DIR/Split/Screen/screen_${TS}.mkv"
+OUT_AUDIO="$BASE_DIR/Split/Audio/audio_${TS}.flac"
+OUT_MIC="$BASE_DIR/Split/Mic/mic_${TS}.flac"
+
+ffmpeg -y -i "$RAW_FILE" -map 0:v:0 -map 0:a:0 -c:v copy -c:a flac "$OUT_ALL"
+ffmpeg -y -i "$RAW_FILE" -map 0:v:0 -an -c:v copy "$OUT_SCREEN"
+ffmpeg -y -i "$RAW_FILE" -map 0:a:1 -c:a flac "$OUT_AUDIO"
+ffmpeg -y -i "$RAW_FILE" -map 0:a:2 -c:a flac "$OUT_MIC"
+mv "$RAW_FILE" "$OUT_MASTER"
+
+notify-send "OBS Split" "Selesai! 5 file tersimpan di ~/Videos/OBS/Split/"

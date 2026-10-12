@@ -1,0 +1,323 @@
+diff --git a/src/compositor/config.c b/src/compositor/config.c
+index c0cf8c0..63c6e75 100644
+--- a/src/compositor/config.c
++++ b/src/compositor/config.c
+@@ -436,6 +436,7 @@ void config_defaults(struct aro_config *c)
+ 	c->nscroll_presets = 3;
+ 	c->bar = TH_BAR;
+ 	c->bar_battery = true;
++	c->nbar_seg = 0;
+ 	c->opacity = c->opacity_unfocused = 1.0;
+ 	c->blur_passes = 2;
+ 	c->blur_radius = 5;
+@@ -1491,6 +1492,23 @@ bool config_load(struct aro_config *c, const char *path)
+ 				c->bar = b ? Q_BAR_ON : Q_BAR_OFF;
+ 		} else if (!strcasecmp(key, "bar_battery")) {
+ 			ok = parse_bool(value, &c->bar_battery);
++		} else if (!strcasecmp(key, "bar_segment")) {
++			/* bar_segment = top|bottom left|right <name> [command ...] */
++			char where[8], side[8], name[32];
++			int used = 0;
++			ok = false;
++			if (c->nbar_seg < ARO_BAR_SEGS &&
++			    sscanf(value, "%7s %7s %31s %n", where, side, name, &used) == 3 &&
++			    (!strcasecmp(where, "top") || !strcasecmp(where, "bottom")) &&
++			    (!strcasecmp(side, "left") || !strcasecmp(side, "right")) &&
++			    !strchr(name, '/')) {
++				struct q_bar_seg *g = &c->bar_seg[c->nbar_seg++];
++				g->bar = !strcasecmp(where, "top") ? Q_BAR_TOP : Q_BAR_BOTTOM;
++				g->pos = !strcasecmp(side, "left") ? Q_SEG_LEFT : Q_SEG_RIGHT;
++				snprintf(g->name, sizeof g->name, "%s", name);
++				snprintf(g->cmd, sizeof g->cmd, "%s", value + used);
++				ok = true;
++			}
+ 		} else if (!strcasecmp(key, "wallpaper")) {
+ 			/* the keywords are words, not paths: `none` never means a
+ 			 * file called none. ./none does, if anyone needs it. */
+diff --git a/src/compositor/config.h b/src/compositor/config.h
+index 7bd8388..c42f40d 100644
+--- a/src/compositor/config.h
++++ b/src/compositor/config.h
+@@ -168,6 +168,17 @@ struct q_theme {
+ /* fixed workspace limit */
+ #define ARO_MAX_WS 32
+ 
++/* bar_segment: a piece of bar text an outside script keeps in
++ * $XDG_RUNTIME_DIR/aro-bar/<name>, with an optional click command */
++#define ARO_BAR_SEGS 12
++enum { Q_BAR_TOP = 0, Q_BAR_BOTTOM = 1 };
++enum { Q_SEG_LEFT = 0, Q_SEG_RIGHT = 1 };
++struct q_bar_seg {
++	int bar, pos;
++	char name[32];
++	char cmd[256];
++};
++
+ struct aro_config {
+ 	uint32_t modkey;        /* WLR_MODIFIER_LOGO or WLR_MODIFIER_ALT */
+ 
+@@ -191,6 +202,8 @@ struct aro_config {
+ 	 */
+ 	enum q_bar bar;
+ 	bool bar_battery;       /* the battery left of the clock, when there is one */
++	struct q_bar_seg bar_seg[ARO_BAR_SEGS];   /* in config order */
++	int nbar_seg;
+ 
+ 	enum q_wallpaper wallpaper;
+ 	char *wallpaper_file;   /* Q_WALLPAPER_FILE only; owned, `~` unexpanded */
+diff --git a/src/compositor/input.c b/src/compositor/input.c
+index ea2407f..500fb3b 100644
+--- a/src/compositor/input.c
++++ b/src/compositor/input.c
+@@ -732,6 +732,11 @@ void cursor_button(struct wl_listener *l, void *data)
+ 		return;
+ 	}
+ 
++	/* the bar: segment commands, workspace pills */
++	if (ev->state == WL_POINTER_BUTTON_STATE_PRESSED && !aro_locked(s) &&
++	    bar_click(s, s->cursor->x, s->cursor->y))
++		return;
++
+ 	if (mouse_bind(s, ev))
+ 		return;
+ 
+diff --git a/src/ui/bar.c b/src/ui/bar.c
+index b373a97..400b1fd 100644
+--- a/src/ui/bar.c
++++ b/src/ui/bar.c
+@@ -7,6 +7,7 @@
+ 
+ #include "bar.h"
+ #include "aro.h"
++#include "core.h"
+ #include "theme.h"
+ 
+ #include <dirent.h>
+@@ -108,6 +109,59 @@ static struct battery battery_get(void)
+ 	return cached;
+ }
+ 
++/* ── segments ──────────────────────────────────────────────────────────── */
++
++/*
++ * bar_segment text lives in $XDG_RUNTIME_DIR/aro-bar/<name>, one line, kept
++ * by a script (aro-bar). A leading '*' means "on": drawn bright instead of
++ * dim. Reading a few tiny tmpfs files on the 1 s clock tick costs nothing
++ * and never blocks the compositor on slow tools (nvidia-smi, nmcli, ...).
++ */
++static bool seg_read(const char *name, char *buf, size_t n, bool *bright)
++{
++	const char *dir = getenv("XDG_RUNTIME_DIR");
++	if (!dir || !*dir)
++		return false;
++	char path[512];
++	snprintf(path, sizeof path, "%s/aro-bar/%s", dir, name);
++	FILE *f = fopen(path, "r");
++	if (!f)
++		return false;
++	char line[256];
++	bool ok = fgets(line, sizeof line, f) != NULL;
++	fclose(f);
++	if (!ok)
++		return false;
++	line[strcspn(line, "\r\n")] = '\0';
++	const char *t = line;
++	*bright = (*t == '*');
++	if (*bright)
++		t++;
++	snprintf(buf, n, "%s", t);
++	return buf[0] != '\0';
++}
++
++/* draw one segment at x (left edge) or ending at x (right edge) */
++static int seg_draw(struct aro_bar *b, int i, int x, bool from_right, int mid)
++{
++	struct aro_server *s = b->output->server;
++	const struct q_theme *th = &s->cfg.theme;
++	struct bar_seg *g = &b->seg[i];
++	char text[256];
++	bool bright = false;
++	if (!seg_read(s->cfg.bar_seg[i].name, text, sizeof text, &bright)) {
++		qtext_show(&g->text, false);
++		g->w = 0;
++		return x;
++	}
++	qtext_show(&g->text, true);
++	qtext_set(&g->text, text, bright ? th->ink : th->dim, b->scale, 0);
++	g->w = g->text.w;
++	g->x = from_right ? x - g->w : x;
++	qtext_move(&g->text, g->x, mid - g->text.h / 2);
++	return from_right ? g->x - th->bar_pad : g->x + g->w + th->bar_pad;
++}
++
+ /* ── the bar ───────────────────────────────────────────────────────────── */
+ 
+ #define PILL_H 18
+@@ -146,6 +200,9 @@ bool bar_create(struct aro_bar *b, struct aro_output *o)
+ 		return false;
+ 	if (!qtext_init(&b->battery, b->tree, th->font_small))
+ 		return false;
++	for (int i = 0; i < ARO_BAR_SEGS; i++)
++		if (!qtext_init(&b->seg[i].text, b->tree, th->font_small))
++			return false;
+ 
+ 	return b->bg != NULL;
+ }
+@@ -235,24 +292,30 @@ void bar_update(struct aro_bar *b, struct aro_output *o)
+ 		qtext_move(&b->ws[i].label,
+ 		           cursor + PILL_PAD,
+ 		           mid - b->ws[i].label.h / 2);
++		b->ws[i].x = cursor;
++		b->ws[i].w = pw;
+ 
+ 		cursor += pw + PILL_GAP;
+ 	}
+ 	b->shown = last + 1;
+ 
+-	/* clock */
+-	char when[16] = "--:--";
++	/* left segments (config order), after the workspace pills */
++	int left = cursor + th->bar_pad;
++	for (int i = 0; i < s->cfg.nbar_seg; i++)
++		if (s->cfg.bar_seg[i].bar == Q_BAR_TOP && s->cfg.bar_seg[i].pos == Q_SEG_LEFT)
++			left = seg_draw(b, i, left, false, mid);
++
++	/* clock and date, centred */
++	char when[48] = "--:--";
+ 	time_t now = time(NULL);
+ 	struct tm tm;
+ 	if (localtime_r(&now, &tm))
+-		strftime(when, sizeof when, "%H:%M", &tm);
+-	qtext_set(&b->clock, when, th->dim, b->scale, 0);
+-	qtext_move(&b->clock,
+-	           b->w - th->bar_pad - b->clock.w,
+-	           mid - b->clock.h / 2);
+-
+-	/* battery, left of the clock; red when low and draining */
+-	int right = b->w - th->bar_pad - b->clock.w;
++		strftime(when, sizeof when, "%H:%M   %a %d %b", &tm);
++	qtext_set(&b->clock, when, th->ink, b->scale, 0);
++	qtext_move(&b->clock, (b->w - b->clock.w) / 2, mid - b->clock.h / 2);
++
++	/* right edge: battery (laptops), then right segments, first one outermost */
++	int right = b->w - th->bar_pad;
+ 	const struct battery bat = s->cfg.bar_battery ? battery_get() : (struct battery){ 0 };
+ 	qtext_show(&b->battery, bat.present);
+ 	if (bat.present) {
+@@ -260,23 +323,54 @@ void bar_update(struct aro_bar *b, struct aro_output *o)
+ 		snprintf(text, sizeof text, bat.charging ? "%d%% charging" : "%d%%", bat.percent);
+ 		bool low = !bat.charging && bat.percent <= 15;
+ 		qtext_set(&b->battery, text, low ? th->urgent : th->dim, b->scale, 0);
+-		right -= th->bar_pad + b->battery.w;
++		right -= b->battery.w;
+ 		qtext_move(&b->battery, right, mid - b->battery.h / 2);
++		right -= th->bar_pad;
+ 	}
++	for (int i = 0; i < s->cfg.nbar_seg; i++)
++		if (s->cfg.bar_seg[i].bar == Q_BAR_TOP && s->cfg.bar_seg[i].pos == Q_SEG_RIGHT)
++			right = seg_draw(b, i, right, true, mid);
++
++	/* segments that do not belong to this bar (bottom, or unused slots) */
++	for (int i = 0; i < ARO_BAR_SEGS; i++)
++		if (i >= s->cfg.nbar_seg || s->cfg.bar_seg[i].bar != Q_BAR_TOP) {
++			qtext_show(&b->seg[i].text, false);
++			b->seg[i].w = 0;
++		}
+ 
+-	/* focused title */
+-	/* only show title on its own output */
+-	const char *title = NULL;
+-	if (s->focused && s->focused->output == o)
+-		title = view_title(s->focused);
+-
+-	int title_x = cursor + th->bar_pad;
+-	int avail = right - th->bar_pad * 2 - title_x;
+-	if (avail < 0)
+-		avail = 0;
++	/* the window title has no room left in this layout (the bottom bar
++	 * lists open windows instead) */
++	qtext_show(&b->title, false);
++}
+ 
+-	qtext_set(&b->title, title ? title : "", th->ink, b->scale, avail);
+-	qtext_move(&b->title, title_x, mid - b->title.h / 2);
++/* press on the bar: segment command, or the workspace pill under it */
++bool bar_click(struct aro_server *s, double lx, double ly)
++{
++	struct aro_output *o;
++	wl_list_for_each(o, &s->outputs, link) {
++		struct aro_bar *b = &o->bar;
++		int h = bar_height(b);
++		if (h <= 0 || lx < b->x || lx >= b->x + b->w || ly < b->y || ly >= b->y + h)
++			continue;
++		int x = (int)lx - b->x;
++		for (int i = 0; i < s->cfg.nbar_seg; i++) {
++			const struct bar_seg *g = &b->seg[i];
++			if (g->w > 0 && x >= g->x && x < g->x + g->w) {
++				if (s->cfg.bar_seg[i].cmd[0])
++					config_spawn(s->cfg.bar_seg[i].cmd);
++				return true;
++			}
++		}
++		for (int i = 0; i < b->shown && i < b->nws; i++) {
++			if (x >= b->ws[i].x && x < b->ws[i].x + b->ws[i].w) {
++				s->focused_output = o;
++				workspace_show(s, i);
++				return true;
++			}
++		}
++		return true;            /* the bar itself: nothing under it to click */
++	}
++	return false;
+ }
+ 
+ void bar_finish(struct aro_bar *b)
+@@ -286,6 +380,8 @@ void bar_finish(struct aro_bar *b)
+ 	qtext_finish(&b->title);
+ 	qtext_finish(&b->clock);
+ 	qtext_finish(&b->battery);
++	for (int i = 0; i < ARO_BAR_SEGS; i++)
++		qtext_finish(&b->seg[i].text);
+ 	if (b->tree)
+ 		wlr_scene_node_destroy(&b->tree->node);
+ 	b->tree = NULL;
+@@ -313,4 +409,6 @@ void bar_retheme(struct aro_bar *b)
+ 	qtext_set_font(&b->title, th->font);
+ 	qtext_set_font(&b->clock, th->font_small);
+ 	qtext_set_font(&b->battery, th->font_small);
++	for (int i = 0; i < ARO_BAR_SEGS; i++)
++		qtext_set_font(&b->seg[i].text, th->font_small);
+ }
+diff --git a/src/ui/bar.h b/src/ui/bar.h
+index 0a2426f..a653634 100644
+--- a/src/ui/bar.h
++++ b/src/ui/bar.h
+@@ -15,6 +15,12 @@ struct wlr_scene_rect;
+ struct bar_ws {
+ 	struct wlr_scene_rect *pill;
+ 	struct qtext label;
++	int x, w;                       /* bar-local, for clicks */
++};
++
++struct bar_seg {
++	struct qtext text;
++	int x, w;                       /* bar-local, for clicks; w = 0 when hidden */
+ };
+ 
+ struct aro_bar {
+@@ -28,6 +34,7 @@ struct aro_bar {
+ 	struct qtext title;
+ 	struct qtext clock;
+ 	struct qtext battery;
++	struct bar_seg seg[ARO_BAR_SEGS]; /* same index as cfg.bar_seg */
+ 
+ 	int x, y, w;
+ 	float scale;
+@@ -44,5 +51,7 @@ int bar_height(const struct aro_bar *b);
+ void bar_update(struct aro_bar *b, struct aro_output *o);
+ void bar_retheme(struct aro_bar *b);
+ void bar_finish(struct aro_bar *b);
++/* a press at layout x,y: run the segment's command or show the workspace */
++bool bar_click(struct aro_server *s, double lx, double ly);
+ 
+ #endif

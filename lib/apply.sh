@@ -366,7 +366,8 @@ setup_public_home() {
     local H="$PUBLIC_HOME" T="$REPO_DIR/core/home"
     install -d "$H/.config/aro" "$H/.config/fuzzel" "$H/.config/kitty" \
                "$H/.config/mako" "$H/.config/zathura" "$H/.config/gtk-3.0" \
-               "$H/.config/gtk-4.0" "$H/.local/share/applications"
+               "$H/.config/gtk-4.0" "$H/.config/xdg-desktop-portal" \
+               "$H/.config/xdg-desktop-portal-wlr" "$H/.local/share/applications"
 
     # .bash_profile
     {
@@ -400,6 +401,8 @@ setup_public_home() {
     { echo; cat "$T/config/aro/overrides.conf"; } >> "$AC"
     if [ "$ENABLE_BLUETOOTH" = "yes" ]; then
         printf '\nbind = mod+b, spawn, kitty -e bluetui\n' >> "$AC"
+        # segmen bar: nama perangkat Bluetooth, kiri jaringan; klik -> bluetui
+        printf 'bar_segment = top right bt  kitty -e bluetui\n' >> "$AC"
     fi
     # Tambahan aro per profil (profiles/<p>/aro.conf), hanya profil yang aktif
     local pr
@@ -426,6 +429,10 @@ setup_public_home() {
     cp "$T/config/zathura/zathurarc"  "$H/.config/zathura/zathurarc"
     cp "$T/config/gtk-3.0/settings.ini" "$H/.config/gtk-3.0/settings.ini"
     cp "$T/config/gtk-4.0/settings.ini" "$H/.config/gtk-4.0/settings.ini"
+    # portal: XDG_CURRENT_DESKTOP=aro tidak dikenal xdg-desktop-portal-wlr -> tanpa
+    # file ini daftar sumber di OBS/Firefox kosong
+    cp "$T/config/xdg-desktop-portal/aro-portals.conf" "$H/.config/xdg-desktop-portal/aro-portals.conf"
+    cp "$T/config/xdg-desktop-portal-wlr/config"       "$H/.config/xdg-desktop-portal-wlr/config"
     # mimeapps.list ditulis langsung (xdg-mime sebagai user gagal kalau ~/.config milik root)
     cp "$T/config/mimeapps.list"     "$H/.config/mimeapps.list"
 

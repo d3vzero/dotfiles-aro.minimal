@@ -60,5 +60,31 @@ install_sung() {
         sung-yt update || echo "!! sung-yt update gagal -- jalankan nanti: Super+U -> YouTube-Sung"
 }
 
+# Config OBS awal (dari Sway): profil Advanced, RecordRAW.mkv di ~/Videos/OBS/RAW,
+# multi-track, hotkey. Hanya dipasang kalau OBS belum pernah dikonfigurasi, supaya
+# perubahan di OBS tidak tertimpa tiap update (UPDATE_OBS=1 untuk memaksa).
+# Path disimpan sebagai @HOME@ di repo; password websocket/stream key tidak ikut.
+install_obs_config() {
+    local src="$PDIR/obs-studio" dst="$PUBLIC_HOME/.config/obs-studio"
+    install -d -o "$PUBLIC_USER" -g "$PUBLIC_USER" \
+        "$PUBLIC_HOME/Videos/OBS/RAW" "$PUBLIC_HOME/Videos/OBS/Split/All" \
+        "$PUBLIC_HOME/Videos/OBS/Split/Screen" "$PUBLIC_HOME/Videos/OBS/Split/Audio" \
+        "$PUBLIC_HOME/Videos/OBS/Split/Mic"
+    install -m755 "$PDIR/bin/split-obs-record" /usr/local/bin/split-obs-record
+    [ -d "$src" ] || { echo "    (belum ada template OBS di repo -- skip)"; return 0; }
+    if [ -d "$dst/basic" ] && [ "${UPDATE_OBS:-0}" != "1" ]; then
+        echo "    config OBS sudah ada -- skip (UPDATE_OBS=1 untuk menimpa dengan template)"
+        return 0
+    fi
+    mkdir -p "$dst"
+    cp -a "$src"/. "$dst"/
+    grep -rl '@HOME@' "$dst" 2>/dev/null | while read -r f; do
+        sed -i "s#@HOME@#$PUBLIC_HOME#g" "$f"
+    done
+    chown -R "$PUBLIC_USER":"$PUBLIC_USER" "$dst"
+    echo "    config OBS dari template dipasang ke $dst"
+}
+
 install_proton_ge
 install_sung
+install_obs_config

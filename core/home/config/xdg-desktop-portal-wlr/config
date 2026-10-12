@@ -1,0 +1,4 @@
+# pemilih sumber screen share (OBS, Firefox): monitor atau jendela, lewat fuzzel
+[screencast]
+chooser_type=dmenu
+chooser_cmd=fuzzel --dmenu --prompt "Share ❯ "

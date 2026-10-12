@@ -1,0 +1,117 @@
+#!/bin/bash
+# aro-bar -- isi segmen bar aro (patch 0008, kunci bar_segment) di
+# $XDG_RUNTIME_DIR/aro-bar/<nama>, satu baris per file. Awalan '*' = terang.
+#   sysmon  CPU 12% 54°  RAM 9.4G  GPU 3% 41° 1.2G
+#   net     ↓1.2M  wifi-rumah  ↑35K
+#   bt      nama perangkat (terang) | BT (redup) | BT off
+# Dijalankan dari config aro (exec = aro-bar). Satu putaran tiap INTERVAL
+# detik dengan builtin bash; nvidia-smi satu proses yang terus berjalan;
+# nmcli/bluetoothctl hanya tiap beberapa putaran.
+set -u
+RUN="${XDG_RUNTIME_DIR:?}"
+DIR="$RUN/aro-bar"
+GPUF="$DIR/.gpu"
+INTERVAL="${ARO_BAR_INTERVAL:-2}"
+mkdir -p "$DIR"
+
+exec 9>"$DIR/.lock"
+flock -n 9 || exit 0                      # satu instance saja
+
+cleanup() { [ -n "${GPUPID:-}" ] && kill "$GPUPID" 2>/dev/null; rm -f "$DIR"/sysmon "$DIR"/net "$DIR"/bt "$GPUF"; }
+trap cleanup EXIT
+trap 'exit 0' TERM INT
+
+put() { printf '%s\n' "$2" > "$DIR/.$1.tmp" && mv -f "$DIR/.$1.tmp" "$DIR/$1"; }
+
+human() {   # byte -> 512B 35K 1.2M 3.4G (bilangan bulat, tanpa bc)
+    local b=$1
+    if   (( b >= 1073741824 )); then printf '%d.%dG' $((b/1073741824)) $(((b%1073741824)*10/1073741824))
+    elif (( b >= 1048576 ));    then printf '%d.%dM' $((b/1048576)) $(((b%1048576)*10/1048576))
+    elif (( b >= 1024 ));       then printf '%dK' $((b/1024))
+    else printf '%dB' "$b"; fi
+}
+
+CPUT=""
+for h in /sys/class/hwmon/hwmon*; do
+    case "$(cat "$h/name" 2>/dev/null)" in k10temp|coretemp|zenpower) CPUT="$h/temp1_input"; break;; esac
+done
+
+# GPU: NVIDIA -> nvidia-smi streaming ke file; AMD -> sysfs langsung
+AMDGPU=""
+if command -v nvidia-smi >/dev/null && nvidia-smi -L >/dev/null 2>&1; then
+    nvidia-smi --query-gpu=utilization.gpu,temperature.gpu,memory.used \
+        --format=csv,noheader,nounits -lms $((INTERVAL * 1000)) 2>/dev/null |
+    while IFS=', ' read -r u t m; do
+        printf 'GPU %s%% %s° %s\n' "$u" "$t" "$(human $((m * 1048576)))" > "$GPUF.tmp" && mv -f "$GPUF.tmp" "$GPUF"
+    done &
+    GPUPID=$!
+else
+    for d in /sys/class/drm/card*/device; do
+        [ -r "$d/gpu_busy_percent" ] && { AMDGPU="$d"; break; }
+    done
+fi
+
+read_cpu() { local l; read -r l < /proc/stat; set -- $l; shift
+             CPU_IDLE=$(( $4 + $5 )); CPU_TOT=0; for v; do CPU_TOT=$((CPU_TOT + v)); done; }
+read_net() { NET_RX=0; NET_TX=0; local l   # "eth0:123 ..." bisa tanpa spasi
+             while IFS= read -r l; do
+                 [[ $l == *:* ]] || continue
+                 l=${l/:/ }; set -- $l
+                 [[ $1 == lo || ! $2 =~ ^[0-9]+$ ]] && continue
+                 NET_RX=$((NET_RX + $2)); NET_TX=$((NET_TX + ${10}))
+             done < /proc/net/dev; }
+
+net_name() {   # koneksi aktif pertama selain loopback
+    command -v nmcli >/dev/null || { echo "net"; return; }
+    local n
+    n="$(nmcli -t -f NAME,TYPE connection show --active 2>/dev/null | awk -F: '$2 != "loopback" { print $1; exit }')"
+    echo "${n:-offline}"
+}
+bt_text() {
+    command -v bluetoothctl >/dev/null || return 1
+    if ! bluetoothctl show 2>/dev/null | grep -q 'Powered: yes'; then echo "BT off"; return 0; fi
+    local d
+    d="$(bluetoothctl devices Connected 2>/dev/null | head -n1 | cut -d' ' -f3-)"
+    if [ -n "$d" ]; then echo "*$d"; else echo "BT"; fi
+}
+
+read_cpu; P_IDLE=$CPU_IDLE; P_TOT=$CPU_TOT
+read_net; P_RX=$NET_RX; P_TX=$NET_TX
+NAME="$(net_name)"; BT="$(bt_text)" || BT=""
+n=0
+
+while [ -S "$RUN/${WAYLAND_DISPLAY:-wayland-0}" ]; do   # berhenti saat sesi aro selesai
+    sleep "$INTERVAL"; n=$((n + 1))
+
+    read_cpu
+    dt=$((CPU_TOT - P_TOT)); di=$((CPU_IDLE - P_IDLE))
+    cpu=$(( dt > 0 ? (100 * (dt - di)) / dt : 0 ))
+    P_IDLE=$CPU_IDLE; P_TOT=$CPU_TOT
+    line="CPU ${cpu}%"
+    [ -n "$CPUT" ] && [ -r "$CPUT" ] && line+=" $(( $(<"$CPUT") / 1000 ))°"
+
+    while read -r k v _; do
+        case "$k" in MemTotal:) mt=$v;; MemAvailable:) ma=$v; break;; esac
+    done < /proc/meminfo
+    line+="  RAM $(human $(( (mt - ma) * 1024 )))"
+
+    if [ -n "${GPUPID:-}" ] && [ -r "$GPUF" ]; then
+        line+="  $(<"$GPUF")"
+    elif [ -n "$AMDGPU" ]; then
+        g="GPU $(<"$AMDGPU/gpu_busy_percent")%"
+        t=$(cat "$AMDGPU"/hwmon/hwmon*/temp1_input 2>/dev/null | head -n1)
+        [ -n "$t" ] && g+=" $((t / 1000))°"
+        [ -r "$AMDGPU/mem_info_vram_used" ] && g+=" $(human $(<"$AMDGPU/mem_info_vram_used"))"
+        line+="  $g"
+    fi
+    put sysmon "$line"
+
+    read_net
+    rx=$(( (NET_RX - P_RX) / INTERVAL )); tx=$(( (NET_TX - P_TX) / INTERVAL ))
+    P_RX=$NET_RX; P_TX=$NET_TX
+    (( n % 5 == 0 )) && NAME="$(net_name)"            # tiap 10 detik
+    put net "↓$(human $rx)  $NAME  ↑$(human $tx)"
+
+    if (( n % 3 == 0 )); then BT="$(bt_text)" || BT=""; fi   # tiap 6 detik
+    if [ -n "$BT" ]; then put bt "$BT"; else rm -f "$DIR/bt"; fi
+done

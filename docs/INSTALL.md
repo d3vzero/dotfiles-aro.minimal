@@ -261,6 +261,25 @@ Cek (sebagai akun umum):
 
     nmcli general permissions | grep modify.system    # yes
 
+## 4g. Bar atas
+
+Patch aro `0008-bar-segments` + script `aro-bar`:
+
+    1 2 3  CPU 12% 54°  RAM 9.4G  GPU 3% 41° 1.2G      21:45   Sun 11 Oct      Headset  ↓1.2M  wifi  ↑35K
+
+- **Kiri**: pill workspace (klik = pindah), lalu segmen `sysmon`.
+- **Tengah**: jam dan tanggal.
+- **Kanan** (dari kanan): `net` (↓ kecepatan, nama koneksi, ↑ kecepatan; klik → nmtui),
+  `bt` (nama perangkat tersambung = terang, `BT` = redup; klik → bluetui; hanya
+  kalau `ENABLE_BLUETOOTH="yes"`).
+- Segmen diatur di config aro: `bar_segment = top|bottom left|right <nama> [perintah]`;
+  teksnya dibaca dari `$XDG_RUNTIME_DIR/aro-bar/<nama>` (awalan `*` = terang), jadi
+  script lain bisa menambah segmen sendiri.
+- GPU: NVIDIA lewat satu proses `nvidia-smi -lms`; AMD lewat sysfs. Interval
+  `ARO_BAR_INTERVAL` (detik, default 2).
+- Judul jendela tidak ditampilkan lagi (bar bawah, tahap berikutnya, akan
+  menampilkan daftar jendela).
+
 ## 4f. Tema hitam putih
 
 Semua warna dari repo (ditimpa tiap `update.sh`):
@@ -371,6 +390,21 @@ Risiko: update Python sistem (minor naik) bisa merusak venv Sung —
     found for 'sung'` dan `qt.qml.propertyCache` saat Sung start aman
     diabaikan.
 - **ai** — Detectron2 untuk **training**, lihat bagian 6a.
+
+## 6b. OBS (profil daily)
+
+- Rekam/stream layar lewat **Screen Capture (PipeWire)** → menu fuzzel "Share ❯".
+  Butuh `~/.config/xdg-desktop-portal/aro-portals.conf` (dipasang otomatis):
+  `XDG_CURRENT_DESKTOP=aro` tidak dikenal `xdg-desktop-portal-wlr`.
+- **Rekam per jendela belum berfungsi di aro 0.4** (kosong / `buffer constraint
+  mismatch`); pakai monitor (`DP-3`) lalu crop di *Edit Transform*. Game windowed
+  yang lebih kecil dari layar ada di tengah: crop atas/bawah = (1600 − tinggi)/2,
+  kiri/kanan = (2560 − lebar)/2 (2560x1440 → atas/bawah 80).
+- Config awal dari `profiles/daily/obs-studio/` (salinan dari Sway, path
+  `@HOME@`), dipasang hanya kalau OBS belum pernah dikonfigurasi
+  (`UPDATE_OBS=1` untuk menimpa). Password websocket & stream key tidak ikut.
+- `Super+Alt+S`: `split-obs-record` memecah `~/Videos/OBS/RAW/RecordRAW.mkv`
+  (track 1 campuran, 2 desktop, 3 mic) ke `~/Videos/OBS/Split/{All,Screen,Audio,Mic}`.
 
 ## 6a. Profil ai: Detectron2 + train-run
 
