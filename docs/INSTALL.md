@@ -284,6 +284,10 @@ Patch aro `0008-bar-segments` + script `aro-bar`:
   judul untuk game Proton). Jendela fokus tebal dan terang, lainnya redup. Klik
   nama = fokus ke jendela itu (pindah workspace kalau perlu); klik pill = pindah
   workspace. Segmen `bar_segment = bottom left|right ...` tampil di sini.
+- **USB** (kanan bawah): `USB <label>` terang kalau ada perangkat yang dipasang
+  udiskie di `/run/media/$USER`, `USB 2` kalau lebih dari satu, `USB` redup kalau
+  kosong. Klik → `usb-open`: superfile langsung di perangkat itu (lebih dari satu:
+  pilih lewat fuzzel).
 
 ## 4f. Tema hitam putih
 

@@ -1,0 +1,15 @@
+#!/bin/bash
+# usb-open -- klik segmen USB di bar bawah: buka superfile di perangkat yang
+# terpasang (udiskie memasang ke /run/media/$USER/<label>). Lebih dari satu:
+# pilih lewat fuzzel. Tidak ada: notifikasi.
+set -u
+base="/run/media/$USER"
+mapfile -t mounts < <(awk -v b="$base/" 'index($2, b) == 1 { gsub(/\\040/, " ", $2); print $2 }' /proc/self/mounts | sort -u)
+case "${#mounts[@]}" in
+    0) notify-send -a USB "Tidak ada USB terpasang" "Colok flashdisk; udiskie memasangnya otomatis" 2>/dev/null; exit 0 ;;
+    1) target="${mounts[0]}" ;;
+    *) target="$(printf '%s\n' "${mounts[@]}" | sed "s#^$base/##" |
+                 fuzzel --dmenu --lines "${#mounts[@]}" --width 40 --prompt 'USB ❯ ')" || exit 0
+       target="$base/$target" ;;
+esac
+exec kitty --class superfile -e spf "$target"

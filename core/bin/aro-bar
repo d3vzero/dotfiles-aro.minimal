@@ -5,6 +5,7 @@
 #   sysmon  CPU 12% 54°  RAM 9.4G  GPU 3% 41° 1.2G
 #   net     ↓1.2M  wifi-rumah  ↑35K
 #   bt      nama perangkat (terang) | BT (redup) | BT off (redup)
+#   usb     USB <label> / USB 2 (terang, ada yang terpasang) | USB (redup)
 # Dijalankan dari config aro (exec = aro-bar). Satu putaran tiap INTERVAL
 # detik dengan builtin bash; nvidia-smi satu proses yang terus berjalan;
 # nmcli/bluetoothctl hanya tiap beberapa putaran.
@@ -18,7 +19,7 @@ mkdir -p "$DIR"
 exec 9>"$DIR/.lock"
 flock -n 9 || exit 0                      # satu instance saja
 
-cleanup() { [ -n "${GPUPID:-}" ] && kill "$GPUPID" 2>/dev/null; rm -f "$DIR"/sysmon "$DIR"/net "$DIR"/bt "$GPUF"; }
+cleanup() { [ -n "${GPUPID:-}" ] && kill "$GPUPID" 2>/dev/null; rm -f "$DIR"/sysmon "$DIR"/net "$DIR"/bt "$DIR"/usb "$GPUF"; }
 trap cleanup EXIT
 trap 'exit 0' TERM INT
 
@@ -76,6 +77,18 @@ bt_text() {
     if [ -n "$d" ]; then echo "$d"; else echo "~BT"; fi
 }
 
+usb_text() {   # perangkat yang dipasang udiskie di /run/media/$USER
+    local base="/run/media/$USER/" n=0 first="" dev mnt rest
+    while read -r dev mnt rest; do
+        [[ $mnt == "$base"* ]] || continue
+        n=$((n + 1)); [ -z "$first" ] && first="${mnt#"$base"}"
+    done < /proc/self/mounts
+    first="${first//\\040/ }"
+    if (( n == 0 )); then echo "~USB"
+    elif (( n == 1 )); then echo "USB ${first:0:16}"
+    else echo "USB $n"; fi
+}
+
 read_cpu; P_IDLE=$CPU_IDLE; P_TOT=$CPU_TOT
 read_net; P_RX=$NET_RX; P_TX=$NET_TX
 NAME="$(net_name)"; BT="$(bt_text)" || BT=""
@@ -115,4 +128,6 @@ while [ -S "$RUN/${WAYLAND_DISPLAY:-wayland-0}" ]; do   # berhenti saat sesi aro
 
     if (( n % 3 == 0 )); then BT="$(bt_text)" || BT=""; fi   # tiap 6 detik
     if [ -n "$BT" ]; then put bt "$BT"; else rm -f "$DIR/bt"; fi
+
+    put usb "$(usb_text)"
 done
