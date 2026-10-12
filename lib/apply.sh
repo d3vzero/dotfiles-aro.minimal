@@ -399,9 +399,9 @@ setup_public_home() {
            -e 's/^layout = dwindle$/layout = scroll/' "$AC"
     { echo; cat "$T/config/aro/overrides.conf"; } >> "$AC"
     if [ "$ENABLE_BLUETOOTH" = "yes" ]; then
-        printf '\nbind = mod+b, spawn, kitty -e bluetui\n' >> "$AC"
+        printf '\nbind = mod+b, spawn, kitty --class bluetui -e bluetui\n' >> "$AC"
         # segmen bar: nama perangkat Bluetooth, kiri jaringan; klik -> bluetui
-        printf 'bar_segment = top right bt  kitty -e bluetui\n' >> "$AC"
+        printf 'bar_segment = top right bt  kitty --class bluetui -e bluetui\n' >> "$AC"
     fi
     # Tambahan aro per profil (profiles/<p>/aro.conf), hanya profil yang aktif
     local pr

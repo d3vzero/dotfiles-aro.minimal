@@ -2,7 +2,7 @@
 Name=superfile
 GenericName=File Manager
 Comment=Kelola file dan folder (di terminal)
-Exec=kitty -e spf %f
+Exec=kitty --class superfile -e spf %f
 Icon=system-file-manager
 Terminal=false
 Type=Application

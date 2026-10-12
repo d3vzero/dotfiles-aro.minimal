@@ -35,6 +35,6 @@ case "$choice" in
         if extract_to "$dest"; then notify "Extracted" "$base → $dest"
         else rmdir "$dest" 2>/dev/null; notify -u critical "Extract failed" "$base"; fi ;;
     "Show contents")
-        exec kitty --title "$base" sh -c '
+        exec kitty --class archive --title "$base" sh -c '
             case "$1" in *.7z|*.rar|*.7Z|*.RAR) 7z l "$1" ;; *) bsdtar -tvf "$1" || 7z l "$1" ;; esac | less' _ "$f" ;;
 esac

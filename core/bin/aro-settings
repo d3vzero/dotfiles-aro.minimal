@@ -10,7 +10,7 @@ items+=$'\n'"Display           resolution and refresh rate"
 choice="$(printf '%s\n' "$items" | fuzzel --dmenu --font monospace:size=11 \
           --width 55 --lines 6 --prompt 'Settings ❯ ')" || exit 0
 case "$choice" in
-    Network*)   exec kitty -e nmtui ;;
-    Bluetooth*) exec kitty -e bluetui ;;
+    Network*)   exec kitty --class nmtui -e nmtui ;;
+    Bluetooth*) exec kitty --class bluetui -e bluetui ;;
     Display*)   exec monitor-mode menu ;;
 esac
