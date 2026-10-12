@@ -1,15 +1,42 @@
 #!/bin/bash
-# usb-open -- klik segmen USB di bar bawah: buka superfile di perangkat yang
-# terpasang (udiskie memasang ke /run/media/$USER/<label>). Lebih dari satu:
-# pilih lewat fuzzel. Tidak ada: notifikasi.
+# usb-open -- USB segment in the bottom bar (click) and Super+Shift+U.
+#   usb-open          fuzzel menu: "Open <label>" (first, Enter) / "Unmount <label>"
+#   usb-open eject    unmount every USB device (and power it off: safe to remove)
+# udiskie mounts devices at /run/media/$USER/<label>.
 set -u
 base="/run/media/$USER"
+notify() { notify-send -a USB "$@" 2>/dev/null || true; }
 mapfile -t mounts < <(awk -v b="$base/" 'index($2, b) == 1 { gsub(/\\040/, " ", $2); print $2 }' /proc/self/mounts | sort -u)
-case "${#mounts[@]}" in
-    0) notify-send -a USB "Tidak ada USB terpasang" "Colok flashdisk; udiskie memasangnya otomatis" 2>/dev/null; exit 0 ;;
-    1) target="${mounts[0]}" ;;
-    *) target="$(printf '%s\n' "${mounts[@]}" | sed "s#^$base/##" |
-                 fuzzel --dmenu --lines "${#mounts[@]}" --width 40 --prompt 'USB ❯ ')" || exit 0
-       target="$base/$target" ;;
+
+eject() {   # eject PATH...
+    local m ok=0 bad=()
+    for m in "$@"; do
+        if udiskie-umount --detach "$m" >/dev/null 2>&1; then ok=$((ok + 1))
+        else bad+=("${m#"$base/"}"); fi
+    done
+    (( ok )) && notify "Safe to remove" "$ok device(s) unmounted"
+    (( ${#bad[@]} )) && notify -u critical "Unmount failed" "${bad[*]} is busy (close windows using it first)"
+    return 0
+}
+
+if [ "${1:-}" = eject ]; then
+    if (( ${#mounts[@]} == 0 )); then notify "No USB device mounted"; exit 0; fi
+    eject "${mounts[@]}"; exit 0
+fi
+
+if (( ${#mounts[@]} == 0 )); then
+    notify "No USB device mounted" "Plug one in; udiskie mounts it automatically"; exit 0
+fi
+
+menu=""
+for m in "${mounts[@]}"; do menu+="Open      ${m#"$base/"}"$'\n'; done
+for m in "${mounts[@]}"; do menu+="Unmount   ${m#"$base/"}"$'\n'; done
+(( ${#mounts[@]} > 1 )) && menu+="Unmount all"$'\n'
+lines=$(( ${#mounts[@]} * 2 + (${#mounts[@]} > 1 ? 1 : 0) ))
+
+choice="$(printf '%s' "$menu" | fuzzel --dmenu --lines "$lines" --width 40 --prompt 'USB ❯ ')" || exit 0
+case "$choice" in
+    "Unmount all") eject "${mounts[@]}" ;;
+    Unmount*)      eject "$base/${choice#Unmount   }" ;;
+    Open*)         exec kitty --class superfile -e spf "$base/${choice#Open      }" ;;
 esac
-exec kitty --class superfile -e spf "$target"
