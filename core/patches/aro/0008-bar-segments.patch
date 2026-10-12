@@ -1,5 +1,21 @@
+diff --git a/src/compositor/aro.c b/src/compositor/aro.c
+index 1081dcc..b5a7a3d 100644
+--- a/src/compositor/aro.c
++++ b/src/compositor/aro.c
+@@ -195,6 +195,11 @@ void keyboard_focus_changed(struct aro_server *s)
+ void aro_focus(struct aro_server *s, struct aro_view *v)
+ {
+ 	focus_apply(s, v);
++	/* the bottom bar's window list shows the focused one in bold, now */
++	struct aro_output *bo;
++	wl_list_for_each(bo, &s->outputs, link)
++		if (bo->bar.tree && bar_bottom_height(&bo->bar) > 0)
++			bar_update(&bo->bar, bo);
+ 	if (v)
+ 		monocle_sync(s, v->output);
+ 	if (v && aro_view_clipped(v))
 diff --git a/src/compositor/arrange.c b/src/compositor/arrange.c
-index 8a6e15b..801bf29 100644
+index 8a6e15b..21b4458 100644
 --- a/src/compositor/arrange.c
 +++ b/src/compositor/arrange.c
 @@ -21,7 +21,10 @@ ly_box usable_area(struct aro_output *o)
@@ -8,26 +24,27 @@ index 8a6e15b..801bf29 100644
  		u = o->box;
 -	u.h -= bar_height(&o->bar);
 +	int bh = bar_height(&o->bar);
-+	u.h -= bh;
++	u.h -= bh + bar_bottom_height(&o->bar);
 +	if (o->server->cfg.bar_top)
 +		u.y += bh;              /* bar on top: windows start below it */
  	return u;
  }
  
 diff --git a/src/compositor/config.c b/src/compositor/config.c
-index c0cf8c0..fb7b4ef 100644
+index c0cf8c0..6d58e77 100644
 --- a/src/compositor/config.c
 +++ b/src/compositor/config.c
-@@ -436,6 +436,8 @@ void config_defaults(struct aro_config *c)
+@@ -436,6 +436,9 @@ void config_defaults(struct aro_config *c)
  	c->nscroll_presets = 3;
  	c->bar = TH_BAR;
  	c->bar_battery = true;
 +	c->nbar_seg = 0;
 +	c->bar_top = false;
++	c->bar_bottom = false;
  	c->opacity = c->opacity_unfocused = 1.0;
  	c->blur_passes = 2;
  	c->blur_radius = 5;
-@@ -478,6 +480,7 @@ void config_defaults(struct aro_config *c)
+@@ -478,6 +481,7 @@ void config_defaults(struct aro_config *c)
  	};
  	c->theme.font = strdup(TH_FONT);
  	c->theme.font_small = strdup(TH_FONT_SMALL);
@@ -35,7 +52,7 @@ index c0cf8c0..fb7b4ef 100644
  
  	install_default_binds(c);
  }
-@@ -1180,6 +1183,7 @@ static const struct theme_key theme_keys[] = {
+@@ -1180,6 +1184,7 @@ static const struct theme_key theme_keys[] = {
  
  	{ "font",       K_STR, T(font),       0, 0 },
  	{ "font_small", K_STR, T(font_small), 0, 0 },
@@ -43,12 +60,14 @@ index c0cf8c0..fb7b4ef 100644
  };
  #undef T
  
-@@ -1491,6 +1495,25 @@ bool config_load(struct aro_config *c, const char *path)
+@@ -1491,6 +1496,27 @@ bool config_load(struct aro_config *c, const char *path)
  				c->bar = b ? Q_BAR_ON : Q_BAR_OFF;
  		} else if (!strcasecmp(key, "bar_battery")) {
  			ok = parse_bool(value, &c->bar_battery);
 +		} else if (!strcasecmp(key, "bar_top")) {
 +			ok = parse_bool(value, &c->bar_top);
++		} else if (!strcasecmp(key, "bar_bottom")) {
++			ok = parse_bool(value, &c->bar_bottom);
 +		} else if (!strcasecmp(key, "bar_segment")) {
 +			/* bar_segment = top|bottom left|right <name> [command ...] */
 +			char where[8], side[8], name[32];
@@ -69,7 +88,7 @@ index c0cf8c0..fb7b4ef 100644
  		} else if (!strcasecmp(key, "wallpaper")) {
  			/* the keywords are words, not paths: `none` never means a
  			 * file called none. ./none does, if anyone needs it. */
-@@ -1545,6 +1568,7 @@ void config_finish(struct aro_config *c)
+@@ -1545,6 +1571,7 @@ void config_finish(struct aro_config *c)
  {
  	free(c->theme.font);
  	free(c->theme.font_small);
@@ -78,7 +97,7 @@ index c0cf8c0..fb7b4ef 100644
  	free(c->xkb_variant);
  	free(c->xkb_options);
 diff --git a/src/compositor/config.h b/src/compositor/config.h
-index 7bd8388..09450af 100644
+index 7bd8388..b89fe5b 100644
 --- a/src/compositor/config.h
 +++ b/src/compositor/config.h
 @@ -163,11 +163,23 @@ struct q_theme {
@@ -105,12 +124,14 @@ index 7bd8388..09450af 100644
  struct aro_config {
  	uint32_t modkey;        /* WLR_MODIFIER_LOGO or WLR_MODIFIER_ALT */
  
-@@ -191,6 +203,9 @@ struct aro_config {
+@@ -191,6 +203,11 @@ struct aro_config {
  	 */
  	enum q_bar bar;
  	bool bar_battery;       /* the battery left of the clock, when there is one */
 +	struct q_bar_seg bar_seg[ARO_BAR_SEGS];   /* in config order */
 +	bool bar_top;                   /* bar at the top of the screen, not the bottom */
++	bool bar_bottom;                /* with bar_top: a second bar at the bottom with the
++	                                 * workspaces, open windows and bottom segments */
 +	int nbar_seg;
  
  	enum q_wallpaper wallpaper;
@@ -132,10 +153,10 @@ index ea2407f..500fb3b 100644
  		return;
  
 diff --git a/src/compositor/layers.c b/src/compositor/layers.c
-index 43b951b..0bd9f1d 100644
+index 43b951b..6b297e4 100644
 --- a/src/compositor/layers.c
 +++ b/src/compositor/layers.c
-@@ -317,10 +317,11 @@ void arrange_layers_output(struct aro_output *o)
+@@ -317,11 +317,13 @@ void arrange_layers_output(struct aro_output *o)
  	                    usable.width != full.width ||
  	                    usable.height != full.height);
  
@@ -147,10 +168,12 @@ index 43b951b..0bd9f1d 100644
 +		          o->server->cfg.bar_top ? usable.y
 +		                                 : usable.y + usable.height - bar_height(&o->bar),
  		          usable.width, o->scale);
++		bar_place_bottom(&o->bar, usable.y + usable.height - bar_bottom_height(&o->bar));
  		bar_update(&o->bar, o);
  	}
+ }
 diff --git a/src/ui/bar.c b/src/ui/bar.c
-index b373a97..261bf4a 100644
+index b373a97..cbce089 100644
 --- a/src/ui/bar.c
 +++ b/src/ui/bar.c
 @@ -7,6 +7,7 @@
@@ -161,7 +184,7 @@ index b373a97..261bf4a 100644
  #include "theme.h"
  
  #include <dirent.h>
-@@ -108,6 +109,59 @@ static struct battery battery_get(void)
+@@ -108,6 +109,86 @@ static struct battery battery_get(void)
  	return cached;
  }
  
@@ -197,12 +220,39 @@ index b373a97..261bf4a 100644
 +	return buf[0] != '\0';
 +}
 +
++/* "Sans 12" -> "Sans Bold 12" (pango wants the size last) */
++static void bold_font(const char *font, char *out, size_t n)
++{
++	const char *sp = strrchr(font, ' ');
++	if (sp && sp[1] >= '0' && sp[1] <= '9')
++		snprintf(out, n, "%.*s Bold%s", (int)(sp - font), font, sp);
++	else
++		snprintf(out, n, "%s Bold", font);
++}
++
++/* short name for the window list: last part of a reverse-DNS app id; games
++ * under Proton (steam_app_<id>) show their title instead */
++static void app_label(struct aro_view *v, char *out, size_t n)
++{
++	const char *id = view_app_id(v);
++	const char *title = view_title(v);
++	if (!id || !*id || !strncmp(id, "steam_app_", 10)) {
++		snprintf(out, n, "%.20s", title && *title ? title : "?");
++		return;
++	}
++	const char *dot = strrchr(id, '.');
++	snprintf(out, n, "%.20s", dot && dot[1] ? dot + 1 : id);
++}
++
 +/* draw one segment at x (left edge) or ending at x (right edge) */
 +static int seg_draw(struct aro_bar *b, int i, int x, bool from_right, int mid)
 +{
 +	struct aro_server *s = b->output->server;
 +	const struct q_theme *th = &s->cfg.theme;
 +	struct bar_seg *g = &b->seg[i];
++	struct wlr_scene_tree *home = s->cfg.bar_seg[i].bar == Q_BAR_BOTTOM ? b->btree : b->tree;
++	if (g->text.node && g->text.node->node.parent != home)
++		wlr_scene_node_reparent(&g->text.node->node, home);
 +	char text[256];
 +	bool bright = false;
 +	if (!seg_read(s->cfg.bar_seg[i].name, text, sizeof text, &bright)) {
@@ -221,7 +271,7 @@ index b373a97..261bf4a 100644
  /* ── the bar ───────────────────────────────────────────────────────────── */
  
  #define PILL_H 18
-@@ -137,15 +191,18 @@ bool bar_create(struct aro_bar *b, struct aro_output *o)
+@@ -137,17 +218,31 @@ bool bar_create(struct aro_bar *b, struct aro_output *o)
  	for (int i = 0; i < b->nws; i++) {
  		ui_color(th->accent, c);
  		b->ws[i].pill = wlr_scene_rect_create(b->tree, 1, PILL_H, c);
@@ -233,17 +283,83 @@ index b373a97..261bf4a 100644
  		return false;
 -	if (!qtext_init(&b->clock, b->tree, th->font_small))
 +	if (!qtext_init(&b->clock, b->tree, th->bar_font))
- 		return false;
--	if (!qtext_init(&b->battery, b->tree, th->font_small))
++		return false;
 +	if (!qtext_init(&b->battery, b->tree, th->bar_font))
  		return false;
+-	if (!qtext_init(&b->battery, b->tree, th->font_small))
 +	for (int i = 0; i < ARO_BAR_SEGS; i++)
 +		if (!qtext_init(&b->seg[i].text, b->tree, th->bar_font))
 +			return false;
++
++	/* bottom strip, hidden until bar_top + bar_bottom ask for it */
++	b->btree = wlr_scene_tree_create(parent);
++	if (!b->btree)
+ 		return false;
++	ui_color(th->bar_bg, c);
++	b->bbg = wlr_scene_rect_create(b->btree, 1, th->bar_h, c);
++	for (int i = 0; i < ARO_BAR_APPS; i++)
++		if (!qtext_init(&b->app[i].text, b->btree, th->bar_font))
++			return false;
++	wlr_scene_node_set_enabled(&b->btree->node, false);
  
- 	return b->bg != NULL;
+-	return b->bg != NULL;
++	return b->bg != NULL && b->bbg != NULL;
  }
-@@ -235,24 +292,30 @@ void bar_update(struct aro_bar *b, struct aro_output *o)
+ 
+ int bar_height(const struct aro_bar *b)
+@@ -158,6 +253,27 @@ int bar_height(const struct aro_bar *b)
+ 	return h > 0 ? h : 0;
+ }
+ 
++int bar_bottom_height(const struct aro_bar *b)
++{
++	const struct aro_config *c = &b->output->server->cfg;
++	if (!b->btree || b->yielded || !c->bar_top || !c->bar_bottom)
++		return 0;
++	return c->theme.bar_h > 0 ? c->theme.bar_h : 0;
++}
++
++void bar_place_bottom(struct aro_bar *b, int y)
++{
++	const struct q_theme *th = &b->output->server->cfg.theme;
++	const int h = bar_bottom_height(b);
++	b->by = y;
++	if (!b->btree)
++		return;
++	wlr_scene_node_set_enabled(&b->btree->node, h > 0);
++	wlr_scene_node_set_position(&b->btree->node, b->x, y);
++	if (h > 0)
++		wlr_scene_rect_set_size(b->bbg, b->w, th->bar_h);
++}
++
+ void bar_place(struct aro_bar *b, int x, int y, int w, float scale)
+ {
+ 	const struct q_theme *th = &b->output->server->cfg.theme;
+@@ -201,6 +317,11 @@ void bar_update(struct aro_bar *b, struct aro_output *o)
+ 	const int mid = th->bar_h / 2;
+ 	int cursor = th->bar_pad;
+ 
++	const bool bottom = bar_bottom_height(b) > 0;
++	struct wlr_scene_tree *pill_home = bottom ? b->btree : b->tree;
++	if (!bottom)
++		cursor = th->bar_pad;
++
+ 	/* workspace pills */
+ 	int last = s->cfg.workspaces - 1;
+ 	for (int i = 0; i < b->nws; i++)
+@@ -212,6 +333,11 @@ void bar_update(struct aro_bar *b, struct aro_output *o)
+ 	for (int i = 0; i < b->nws; i++) {
+ 		bool shown = i <= last;
+ 
++		if (b->ws[i].pill->node.parent != pill_home) {
++			wlr_scene_node_reparent(&b->ws[i].pill->node, pill_home);
++			if (b->ws[i].label.node)
++				wlr_scene_node_reparent(&b->ws[i].label.node->node, pill_home);
++		}
+ 		wlr_scene_node_set_enabled(&b->ws[i].pill->node, false);
+ 		qtext_show(&b->ws[i].label, shown);
+ 		if (!shown)
+@@ -235,24 +361,31 @@ void bar_update(struct aro_bar *b, struct aro_output *o)
  		qtext_move(&b->ws[i].label,
  		           cursor + PILL_PAD,
  		           mid - b->ws[i].label.h / 2);
@@ -256,8 +372,9 @@ index b373a97..261bf4a 100644
  
 -	/* clock */
 -	char when[16] = "--:--";
-+	/* left segments (config order), after the workspace pills */
-+	int left = cursor + th->bar_pad;
++	/* left segments (config order), after the workspace pills (or from the
++	 * left edge when the pills live on the bottom strip) */
++	int left = bottom ? th->bar_pad : cursor + th->bar_pad;
 +	for (int i = 0; i < s->cfg.nbar_seg; i++)
 +		if (s->cfg.bar_seg[i].bar == Q_BAR_TOP && s->cfg.bar_seg[i].pos == Q_SEG_LEFT)
 +			left = seg_draw(b, i, left, false, mid);
@@ -284,7 +401,7 @@ index b373a97..261bf4a 100644
  	const struct battery bat = s->cfg.bar_battery ? battery_get() : (struct battery){ 0 };
  	qtext_show(&b->battery, bat.present);
  	if (bat.present) {
-@@ -260,23 +323,54 @@ void bar_update(struct aro_bar *b, struct aro_output *o)
+@@ -260,23 +393,167 @@ void bar_update(struct aro_bar *b, struct aro_output *o)
  		snprintf(text, sizeof text, bat.charging ? "%d%% charging" : "%d%%", bat.percent);
  		bool low = !bat.charging && bat.percent <= 15;
  		qtext_set(&b->battery, text, low ? th->urgent : th->dim, b->scale, 0);
@@ -297,9 +414,10 @@ index b373a97..261bf4a 100644
 +		if (s->cfg.bar_seg[i].bar == Q_BAR_TOP && s->cfg.bar_seg[i].pos == Q_SEG_RIGHT)
 +			right = seg_draw(b, i, right, true, mid);
 +
-+	/* segments that do not belong to this bar (bottom, or unused slots) */
++	/* unused slots, and bottom segments while there is no bottom strip */
 +	for (int i = 0; i < ARO_BAR_SEGS; i++)
-+		if (i >= s->cfg.nbar_seg || s->cfg.bar_seg[i].bar != Q_BAR_TOP) {
++		if (i >= s->cfg.nbar_seg ||
++		    (s->cfg.bar_seg[i].bar == Q_BAR_BOTTOM && !bottom)) {
 +			qtext_show(&b->seg[i].text, false);
 +			b->seg[i].w = 0;
 +		}
@@ -309,18 +427,87 @@ index b373a97..261bf4a 100644
 -	const char *title = NULL;
 -	if (s->focused && s->focused->output == o)
 -		title = view_title(s->focused);
--
++	if (!bottom) {
++		for (int i = 0; i < ARO_BAR_APPS; i++)
++			qtext_show(&b->app[i].text, false);
++		b->napp = 0;
++	} else {
++		/* bottom right segments, first one outermost; bottom left ones */
++		int bright_x = b->w - th->bar_pad, bleft = th->bar_pad;
++		for (int i = 0; i < s->cfg.nbar_seg; i++) {
++			if (s->cfg.bar_seg[i].bar != Q_BAR_BOTTOM)
++				continue;
++			if (s->cfg.bar_seg[i].pos == Q_SEG_RIGHT)
++				bright_x = seg_draw(b, i, bright_x, true, mid);
++			else
++				bleft = seg_draw(b, i, bleft, false, mid);
++		}
+ 
 -	int title_x = cursor + th->bar_pad;
 -	int avail = right - th->bar_pad * 2 - title_x;
 -	if (avail < 0)
 -		avail = 0;
++		/* every open window on this output, oldest first: the focused one
++		 * bright and bold, the rest dim */
++		char bold[160];
++		bold_font(th->bar_font, bold, sizeof bold);
++		int n = 0, total = 0;
++		struct aro_view *v;
++		wl_list_for_each_reverse(v, &s->views, link) {
++			if (n >= ARO_BAR_APPS)
++				break;
++			if (!v->mapped || v->output != o)
++				continue;
++			struct bar_app *a = &b->app[n];
++			char label[64];
++			app_label(v, label, sizeof label);
++			const bool on = (s->focused == v);
++			if (a->bold != on || !a->text.font) {
++				qtext_set_font(&a->text, on ? bold : th->bar_font);
++				a->bold = on;
++			}
++			qtext_show(&a->text, true);
++			qtext_set(&a->text, label, on ? th->ink : th->dim, b->scale, 0);
++			a->view = v;
++			a->w = a->text.w;
++			total += a->w + (n ? th->bar_pad : 0);
++			n++;
++		}
++		for (int i = n; i < ARO_BAR_APPS; i++) {
++			qtext_show(&b->app[i].text, false);
++			b->app[i].view = NULL;
++			b->app[i].w = 0;
++		}
++		b->napp = n;
++
++		/* centre "pills  apps" as one group */
++		int pills_w = cursor > th->bar_pad ? cursor - th->bar_pad - PILL_GAP : 0;
++		int group = pills_w + (n ? th->bar_pad * 2 + total : 0);
++		int gx = (b->w - group) / 2;
++		if (gx < th->bar_pad)
++			gx = th->bar_pad;
++		int shift = gx - th->bar_pad;
++		for (int i = 0; i < b->shown && i < b->nws; i++) {
++			b->ws[i].x += shift;
++			wlr_scene_node_set_position(&b->ws[i].pill->node, b->ws[i].x, mid - PILL_H / 2);
++			qtext_move(&b->ws[i].label, b->ws[i].x + PILL_PAD,
++			           mid - b->ws[i].label.h / 2);
++		}
++		int ax = gx + pills_w + th->bar_pad * 2;
++		for (int i = 0; i < n; i++) {
++			b->app[i].x = ax;
++			qtext_move(&b->app[i].text, ax, mid - b->app[i].text.h / 2);
++			ax += b->app[i].w + th->bar_pad;
++		}
++	}
+ 
+-	qtext_set(&b->title, title ? title : "", th->ink, b->scale, avail);
+-	qtext_move(&b->title, title_x, mid - b->title.h / 2);
 +	/* the window title has no room left in this layout (the bottom bar
 +	 * lists open windows instead) */
 +	qtext_show(&b->title, false);
 +}
- 
--	qtext_set(&b->title, title ? title : "", th->ink, b->scale, avail);
--	qtext_move(&b->title, title_x, mid - b->title.h / 2);
++
 +/* press on the bar: segment command, or the workspace pill under it */
 +bool bar_click(struct aro_server *s, double lx, double ly)
 +{
@@ -333,7 +520,36 @@ index b373a97..261bf4a 100644
 +		int x = (int)lx - b->x;
 +		for (int i = 0; i < s->cfg.nbar_seg; i++) {
 +			const struct bar_seg *g = &b->seg[i];
-+			if (g->w > 0 && x >= g->x && x < g->x + g->w) {
++			if (s->cfg.bar_seg[i].bar == Q_BAR_TOP && g->w > 0 &&
++			    x >= g->x && x < g->x + g->w) {
++				if (s->cfg.bar_seg[i].cmd[0])
++					config_spawn(s->cfg.bar_seg[i].cmd);
++				return true;
++			}
++		}
++		if (bar_bottom_height(b) <= 0) {
++			for (int i = 0; i < b->shown && i < b->nws; i++) {
++				if (x >= b->ws[i].x && x < b->ws[i].x + b->ws[i].w) {
++					s->focused_output = o;
++					workspace_show(s, i);
++					return true;
++				}
++			}
++		}
++		return true;            /* the bar itself: nothing under it to click */
++	}
++
++	/* the bottom strip: pills, windows, bottom segments */
++	wl_list_for_each(o, &s->outputs, link) {
++		struct aro_bar *b = &o->bar;
++		int h = bar_bottom_height(b);
++		if (h <= 0 || lx < b->x || lx >= b->x + b->w || ly < b->by || ly >= b->by + h)
++			continue;
++		int x = (int)lx - b->x;
++		for (int i = 0; i < s->cfg.nbar_seg; i++) {
++			const struct bar_seg *g = &b->seg[i];
++			if (s->cfg.bar_seg[i].bar == Q_BAR_BOTTOM && g->w > 0 &&
++			    x >= g->x && x < g->x + g->w) {
 +				if (s->cfg.bar_seg[i].cmd[0])
 +					config_spawn(s->cfg.bar_seg[i].cmd);
 +				return true;
@@ -346,22 +562,40 @@ index b373a97..261bf4a 100644
 +				return true;
 +			}
 +		}
-+		return true;            /* the bar itself: nothing under it to click */
++		for (int i = 0; i < b->napp; i++) {
++			struct aro_view *v = b->app[i].view;
++			if (v && x >= b->app[i].x && x < b->app[i].x + b->app[i].w) {
++				/* still open? the list is rebuilt every second */
++				struct aro_view *it;
++				wl_list_for_each(it, &s->views, link)
++					if (it == v && it->mapped) {
++						view_raise_and_focus(s, v);
++						break;
++					}
++				return true;
++			}
++		}
++		return true;
 +	}
 +	return false;
  }
  
  void bar_finish(struct aro_bar *b)
-@@ -286,6 +380,8 @@ void bar_finish(struct aro_bar *b)
+@@ -286,6 +563,13 @@ void bar_finish(struct aro_bar *b)
  	qtext_finish(&b->title);
  	qtext_finish(&b->clock);
  	qtext_finish(&b->battery);
 +	for (int i = 0; i < ARO_BAR_SEGS; i++)
 +		qtext_finish(&b->seg[i].text);
++	for (int i = 0; i < ARO_BAR_APPS; i++)
++		qtext_finish(&b->app[i].text);
++	if (b->btree)
++		wlr_scene_node_destroy(&b->btree->node);
++	b->btree = NULL;
  	if (b->tree)
  		wlr_scene_node_destroy(&b->tree->node);
  	b->tree = NULL;
-@@ -308,9 +404,11 @@ void bar_retheme(struct aro_bar *b)
+@@ -308,9 +592,21 @@ void bar_retheme(struct aro_bar *b)
  	for (int i = 0; i < b->nws; i++) {
  		ui_color(th->accent, c);
  		wlr_scene_rect_set_color(b->ws[i].pill, c);
@@ -375,12 +609,22 @@ index b373a97..261bf4a 100644
 +	qtext_set_font(&b->battery, th->bar_font);
 +	for (int i = 0; i < ARO_BAR_SEGS; i++)
 +		qtext_set_font(&b->seg[i].text, th->bar_font);
++	if (b->bbg) {
++		ui_color(th->bar_bg, c);
++		wlr_scene_rect_set_color(b->bbg, c);
++		if (th->bar_h > 0)
++			wlr_scene_rect_set_size(b->bbg, b->w, th->bar_h);
++	}
++	for (int i = 0; i < ARO_BAR_APPS; i++) {
++		qtext_set_font(&b->app[i].text, th->bar_font);
++		b->app[i].bold = false;
++	}
  }
 diff --git a/src/ui/bar.h b/src/ui/bar.h
-index 0a2426f..a653634 100644
+index 0a2426f..e519722 100644
 --- a/src/ui/bar.h
 +++ b/src/ui/bar.h
-@@ -15,6 +15,12 @@ struct wlr_scene_rect;
+@@ -15,6 +15,22 @@ struct wlr_scene_rect;
  struct bar_ws {
  	struct wlr_scene_rect *pill;
  	struct qtext label;
@@ -390,10 +634,20 @@ index 0a2426f..a653634 100644
 +struct bar_seg {
 +	struct qtext text;
 +	int x, w;                       /* bar-local, for clicks; w = 0 when hidden */
++};
++
++struct aro_view;
++
++#define ARO_BAR_APPS 24
++struct bar_app {
++	struct qtext text;
++	struct aro_view *view;          /* valid only until the next bar_update */
++	int x, w;                       /* bottom-bar-local, for clicks */
++	bool bold;
  };
  
  struct aro_bar {
-@@ -28,6 +34,7 @@ struct aro_bar {
+@@ -28,10 +44,18 @@ struct aro_bar {
  	struct qtext title;
  	struct qtext clock;
  	struct qtext battery;
@@ -401,7 +655,25 @@ index 0a2426f..a653634 100644
  
  	int x, y, w;
  	float scale;
-@@ -44,5 +51,7 @@ int bar_height(const struct aro_bar *b);
+ 
++	/* bar_bottom: a second strip at the bottom of the same output */
++	struct wlr_scene_tree *btree;
++	struct wlr_scene_rect *bbg;
++	struct bar_app app[ARO_BAR_APPS];
++	int napp;
++	int by;                         /* layout y of the bottom strip */
++
+ 	/* another bar holds this output */
+ 	bool yielded;
+ };
+@@ -40,9 +64,14 @@ bool bar_create(struct aro_bar *b, struct aro_output *o);
+ void bar_place(struct aro_bar *b, int x, int y, int w, float scale);
+ /* 0 when off, missing or yielded */
+ int bar_height(const struct aro_bar *b);
++/* the bottom strip: 0 when off (needs bar_top + bar_bottom) */
++int bar_bottom_height(const struct aro_bar *b);
++void bar_place_bottom(struct aro_bar *b, int y);
+ /* update bar from output state */
  void bar_update(struct aro_bar *b, struct aro_output *o);
  void bar_retheme(struct aro_bar *b);
  void bar_finish(struct aro_bar *b);

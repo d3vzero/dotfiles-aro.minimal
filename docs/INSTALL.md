@@ -279,8 +279,11 @@ Patch aro `0008-bar-segments` + script `aro-bar`:
   (kunci dari patch 0008; `bar_font` default = `font_small`).
 - GPU: NVIDIA lewat satu proses `nvidia-smi -lms`; AMD lewat sysfs. Interval
   `ARO_BAR_INTERVAL` (detik, default 2).
-- Judul jendela tidak ditampilkan lagi (bar bawah, tahap berikutnya, akan
-  menampilkan daftar jendela).
+- **Bar bawah** (`bar_bottom = true`, butuh `bar_top = true`): di tengah pill
+  workspace dan **semua jendela terbuka** (nama pendek: bagian terakhir app id, atau
+  judul untuk game Proton). Jendela fokus tebal dan terang, lainnya redup. Klik
+  nama = fokus ke jendela itu (pindah workspace kalau perlu); klik pill = pindah
+  workspace. Segmen `bar_segment = bottom left|right ...` tampil di sini.
 
 ## 4f. Tema hitam putih
 
