@@ -70,6 +70,7 @@ install_superfile
 step "[7/10] File sistem + service dinit"
 install_system_files
 enable_services
+setup_logging
 
 step "[8/10] Setup profil"
 run_profile_hooks

@@ -44,6 +44,8 @@ load_conf() {
     AI_BACKEND="${AI_BACKEND:-auto}"
     ENABLE_BLUETOOTH="${ENABLE_BLUETOOTH:-no}"   # config lama belum punya baris ini
     PUBLIC_NETWORK_CONTROL="${PUBLIC_NETWORK_CONTROL:-no}"
+    LOG_PERSIST="${LOG_PERSIST:-yes}"
+    LOG_KEEP_DAYS="${LOG_KEEP_DAYS:-30}"
 
     case "$CPU" in amd|intel) ;; *) die "CPU='$CPU' tidak valid (amd | intel)" ;; esac
     case "$GPU" in amd|nvidia|intel|vm) ;; *) die "GPU='$GPU' tidak valid (amd | nvidia | intel | vm)" ;; esac
@@ -213,6 +215,7 @@ install_packages() {
     pkgs+=($(gpu_packages))
     if [ "$ENABLE_SSH" = "yes" ]; then pkgs+=(openssh openssh-dinit); fi
     if [ "$ENABLE_BLUETOOTH" = "yes" ]; then pkgs+=(bluez bluez-utils bluez-dinit bluetui); fi
+    if [ "$LOG_PERSIST" = "yes" ]; then pkgs+=(syslog-ng syslog-ng-dinit); fi
     # driver NVIDIA yang sedang ditahan dan sudah terpasang tidak diminta lagi
     # (kalau diminta, pacman mencoba menaikkannya dan bentrok)
     if [ -n "${NVIDIA_HELD:-}" ]; then
@@ -344,6 +347,30 @@ enable_services() {
         rm -f /etc/polkit-1/rules.d/50-networkmanager.rules
         gpasswd -d "$PUBLIC_USER" network >/dev/null 2>&1 || true
     fi
+}
+
+# Log persisten (LOG_PERSIST=yes): syslog-ng menulis /var/log/aro/<tanggal>.log
+# (TAB: waktu level program pid pesan, fsync tiap baris), service aro-bootlog
+# menandai boot / shutdown bersih dan menyimpan catatan crash kernel (pstore).
+# Tanpa ini, log boot sebelumnya hilang saat reboot (tidak ada journald di Artix).
+setup_logging() {
+    if [ "$LOG_PERSIST" != "yes" ]; then
+        rm -f /etc/dinit.d/boot.d/aro-bootlog /etc/dinit.d/boot.d/syslog-ng
+        return 0
+    fi
+    local ver
+    ver="$(syslog-ng --version 2>/dev/null | awk '/^syslog-ng/ { split($2, v, "."); print v[1] "." v[2]; exit }')"
+    [ -n "$ver" ] || { warn "syslog-ng tidak terpasang -- log persisten dilewati"; return 0; }
+    [ -f /etc/syslog-ng/syslog-ng.conf.orig ] || cp -a /etc/syslog-ng/syslog-ng.conf /etc/syslog-ng/syslog-ng.conf.orig 2>/dev/null
+    sed "s/@VERSION@/$ver/" "$REPO_DIR/core/logging/syslog-ng.conf.in" > /etc/syslog-ng/syslog-ng.conf
+    install -d -o root -g log -m 0750 /var/log/aro
+    install -m644 "$REPO_DIR/core/dinit/aro-bootlog" /etc/dinit.d/aro-bootlog
+    [ -e /etc/dinit.d/syslog-ng ] || warn "service dinit 'syslog-ng' tidak ada -- cek: ls /etc/dinit.d | grep -i syslog"
+    ln -sf /etc/dinit.d/syslog-ng /etc/dinit.d/boot.d/
+    ln -sf /etc/dinit.d/aro-bootlog /etc/dinit.d/boot.d/
+    usermod -aG log "$ADMIN_USER"           # Admin membaca log (aro-lastboot) tanpa sudo
+    if syslog-ng --syntax-only >/dev/null 2>&1; then echo "    log persisten: /var/log/aro (syslog-ng $ver)"
+    else warn "config syslog-ng ditolak: syslog-ng --syntax-only"; fi
 }
 
 run_profile_hooks() {

@@ -1,0 +1,43 @@
+#!/bin/bash
+# aro-lastboot [N] -- ringkasan boot sebelumnya dari /var/log/aro (LOG_PERSIST=yes).
+#   N = 1 (default) boot sebelumnya, 2 = dua boot lalu, ...
+# Membaca: penanda aro-boot (boot / shutdown clean / pstore), pesan level 0-3, pola
+# kernel penting (NVIDIA Xid, OOM, hung task, suhu, I/O error, panic), dan baris
+# terakhir sebelum boot itu berhenti. Butuh grup "log" (Admin) atau sudo.
+set -u
+N="${1:-1}"
+LOGDIR=/var/log/aro
+compgen -G "$LOGDIR/*.log" >/dev/null || { echo "Belum ada log di $LOGDIR (LOG_PERSIST=yes, lalu reboot)."; exit 1; }
+[ -r "$(ls "$LOGDIR"/*.log | head -n1)" ] || { echo "Tidak bisa membaca $LOGDIR: jalankan dengan sudo, atau login ulang setelah masuk grup log."; exit 1; }
+
+ls "$LOGDIR"/*.log | sort | xargs cat | awk -F'\t' -v want="$N" '
+    function important(lv, prog, msg) {
+        if (lv != "" && lv + 0 <= 3) return 1
+        return msg ~ /NVRM: Xid|Out of memory|oom-kill|oom_reaper|blocked for more than|hung_task|[Tt]hermal|critical temperature|I\/O error|Call Trace|BUG:|watchdog|segfault|Kernel panic|MCE|Machine check|fallen off the bus/
+    }
+    { line[NR] = $0; t[NR] = $1; lv[NR] = $2; pr[NR] = $3; msg[NR] = $5
+      if ($3 == "aro-boot" && $5 ~ /^boot /) { nb++; start[nb] = NR; info[nb] = $5 } }
+    END {
+        if (nb == 0) { print "Belum ada penanda boot di log (service aro-bootlog belum pernah jalan)."; exit 1 }
+        k = nb - want
+        if (k < 1) { printf "Hanya ada %d boot tercatat; boot ke-%d sebelum ini belum ada.\n", nb, want; exit 1 }
+        a = start[k]; b = (k + 1 <= nb) ? start[k + 1] - 1 : NR
+        clean = 0; panic = ""
+        for (i = a; i <= b; i++) if (pr[i] == "aro-boot" && msg[i] ~ /^shutdown clean/) clean = 1
+        if (k + 1 <= nb)                       # catatan pstore ditulis di awal boot berikutnya
+            for (i = start[k + 1]; i <= NR && i < start[k + 1] + 40; i++)
+                if (pr[i] == "aro-boot" && msg[i] ~ /^pstore:/) panic = msg[i]
+        last = b
+        while (last > a && pr[last] == "aro-boot") last--
+        printf "Boot     : %s  (%s)\n", t[a], substr(info[k], 6)
+        printf "Terakhir : %s\n", t[last]
+        if (panic != "")  print "Akhir    : KERNEL PANIC / crash kernel -- " panic
+        else if (clean)   print "Akhir    : shutdown / reboot bersih"
+        else              print "Akhir    : TIDAK ada shutdown bersih -- hang, mati paksa (tombol power), atau listrik padam"
+        n = 0
+        for (i = a; i <= b; i++) if (pr[i] != "aro-boot" && important(lv[i], pr[i], msg[i])) imp[++n] = i
+        printf "\nMasalah penting: %d baris (level 0-3 dan pola kernel)\n", n
+        for (j = (n > 25 ? n - 24 : 1); j <= n; j++) { i = imp[j]; printf "  %s  [%s] %s: %s\n", substr(t[i], 12, 8), lv[i], pr[i], msg[i] }
+        print "\nBaris terakhir sebelum berhenti:"
+        for (i = (last - 19 > a ? last - 19 : a); i <= last; i++) printf "  %s  [%s] %s: %s\n", substr(t[i], 12, 8), lv[i], pr[i], msg[i]
+    }'

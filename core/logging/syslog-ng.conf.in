@@ -1,0 +1,22 @@
+@version: @VERSION@
+# dotfiles-aro.minimal: log persisten (LOG_PERSIST=yes). Dibuat ulang oleh update.sh.
+# Satu file per hari di /var/log/aro, satu baris per pesan, dipisah TAB:
+#   waktu  level(0-7)  program  pid  pesan
+# fsync tiap baris: baris-baris terakhir sebelum hang / mati paksa tetap tersimpan.
+@include "scl.conf"
+
+options {
+    chain_hostnames(off); use_dns(no); use_fqdn(no); dns_cache(no);
+    flush_lines(0); stats(freq(0)); create_dirs(yes);
+    owner("root"); group("log"); perm(0640); dir_owner("root"); dir_group("log"); dir_perm(0750);
+};
+
+source s_local { system(); internal(); };
+
+destination d_aro {
+    file("/var/log/aro/${YEAR}-${MONTH}-${DAY}.log"
+         template("${ISODATE}\t${LEVEL_NUM}\t${PROGRAM}\t${PID}\t${MSG}\n")
+         template-escape(no) fsync(yes));
+};
+
+log { source(s_local); destination(d_aro); };

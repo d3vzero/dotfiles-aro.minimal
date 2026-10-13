@@ -321,6 +321,22 @@ Semua warna dari repo (ditimpa tiap `update.sh`):
 Tidak ikut: aplikasi dengan tema sendiri (OnlyOffice, Steam, Sung, OBS) dan
 isi halaman web.
 
+## 4h. Log persisten (`LOG_PERSIST`)
+
+Artix tidak punya journald: tanpa ini log boot sebelumnya hilang saat reboot. Dengan
+`LOG_PERSIST="yes"` (default):
+
+- **syslog-ng** menulis semua pesan (kernel + program) ke `/var/log/aro/<tanggal>.log`,
+  satu baris per pesan dipisah TAB (`waktu level program pid pesan`), `fsync` tiap baris
+  supaya baris terakhir sebelum hang tetap ada. Grup `log` (Admin masuk otomatis).
+- Service dinit **aro-bootlog** menulis `boot <id>` saat boot dan `shutdown clean` saat
+  dimatikan dengan benar; menyalin catatan crash kernel (pstore) ke
+  `/var/log/aro/pstore/`; menghapus log lebih tua dari `LOG_KEEP_DAYS` (30).
+- **`aro-lastboot`** (`aro-lastboot 2` = dua boot lalu): cara boot berakhir (bersih /
+  berhenti mendadak / kernel panic), masalah penting (level 0-3, NVIDIA Xid, OOM, hung
+  task, suhu, I/O error), dan 20 baris terakhir sebelum berhenti.
+- Config syslog-ng asli disimpan sebagai `/etc/syslog-ng/syslog-ng.conf.orig`.
+
 ## 5. Admin & update
 
 Admin login di tty lain: `Ctrl+Alt+F2` → login `Admin`.

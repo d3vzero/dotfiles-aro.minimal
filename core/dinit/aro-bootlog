@@ -1,0 +1,5 @@
+# dotfiles-aro.minimal: penanda boot/shutdown di log + simpan catatan crash (pstore)
+type         = scripted
+command      = /usr/local/sbin/aro-bootlog start
+stop-command = /usr/local/sbin/aro-bootlog stop
+depends-on   = syslog-ng
