@@ -1,4 +1,4 @@
-@version: @VERSION@
+@version: current
 # dotfiles-aro.minimal: log persisten (LOG_PERSIST=yes). Dibuat ulang oleh update.sh.
 # Satu file per hari di /var/log/aro, satu baris per pesan, dipisah TAB:
 #   waktu  level(0-7)  program  pid  pesan

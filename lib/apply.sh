@@ -358,18 +358,17 @@ setup_logging() {
         rm -f /etc/dinit.d/boot.d/aro-bootlog /etc/dinit.d/boot.d/syslog-ng
         return 0
     fi
-    local ver
-    ver="$(syslog-ng --version 2>/dev/null | awk '/^syslog-ng/ { split($2, v, "."); print v[1] "." v[2]; exit }')"
-    [ -n "$ver" ] || { warn "syslog-ng tidak terpasang -- log persisten dilewati"; return 0; }
+    command -v syslog-ng >/dev/null || { warn "syslog-ng tidak terpasang -- log persisten dilewati"; return 0; }
     [ -f /etc/syslog-ng/syslog-ng.conf.orig ] || cp -a /etc/syslog-ng/syslog-ng.conf /etc/syslog-ng/syslog-ng.conf.orig 2>/dev/null
-    sed "s/@VERSION@/$ver/" "$REPO_DIR/core/logging/syslog-ng.conf.in" > /etc/syslog-ng/syslog-ng.conf
+    # @version: current = versi yang terpasang (output --version berubah format antar versi)
+    install -m644 "$REPO_DIR/core/logging/syslog-ng.conf.in" /etc/syslog-ng/syslog-ng.conf
     install -d -o root -g log -m 0750 /var/log/aro
     install -m644 "$REPO_DIR/core/dinit/aro-bootlog" /etc/dinit.d/aro-bootlog
     [ -e /etc/dinit.d/syslog-ng ] || warn "service dinit 'syslog-ng' tidak ada -- cek: ls /etc/dinit.d | grep -i syslog"
     ln -sf /etc/dinit.d/syslog-ng /etc/dinit.d/boot.d/
     ln -sf /etc/dinit.d/aro-bootlog /etc/dinit.d/boot.d/
     usermod -aG log "$ADMIN_USER"           # Admin membaca log (aro-lastboot) tanpa sudo
-    if syslog-ng --syntax-only >/dev/null 2>&1; then echo "    log persisten: /var/log/aro (syslog-ng $ver)"
+    if syslog-ng --syntax-only >/dev/null 2>&1; then echo "    log persisten: /var/log/aro (syslog-ng)"
     else warn "config syslog-ng ditolak: syslog-ng --syntax-only"; fi
 }
 
