@@ -16,7 +16,11 @@ ls "$LOGDIR"/*.log | sort | xargs cat | awk -F'\t' -v want="$N" '
         return msg ~ /NVRM: Xid|Out of memory|oom-kill|oom_reaper|blocked for more than|hung_task|[Tt]hermal|critical temperature|I\/O error|Call Trace|BUG:|watchdog|segfault|Kernel panic|MCE|Machine check|fallen off the bus/
     }
     { line[NR] = $0; t[NR] = $1; lv[NR] = $2; pr[NR] = $3; msg[NR] = $5
-      if ($3 == "aro-boot" && $5 ~ /^boot /) { nb++; start[nb] = NR; info[nb] = $5 } }
+      # a boot starts at "syslog-ng starting up": its own "boot" marker comes a bit
+      # later, after lines of the new boot (login, NetworkManager) are already in
+      if ($3 == "syslog-ng" && $5 ~ /starting up/) up = NR
+      if ($3 == "aro-boot" && $5 ~ /^boot /) {
+          nb++; start[nb] = (up > prev) ? up : NR; info[nb] = $5; prev = NR } }
     END {
         if (nb == 0) { print "Belum ada penanda boot di log (service aro-bootlog belum pernah jalan)."; exit 1 }
         k = nb - want
