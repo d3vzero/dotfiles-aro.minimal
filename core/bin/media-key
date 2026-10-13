@@ -3,6 +3,7 @@
 #   play | next | prev | stop   -> playerctl (MPRIS: Sung, Firefox, mpv)
 #   up | down | mute            -> wpctl (PipeWire default output), max 100%
 #   mic-up | mic-down | mic-mute -> the same for the default input (microphone)
+#   mute-all                    -> speaker and microphone together: both muted, or both back on
 # Shows one notification that is replaced on each press (no stacking).
 set -uo pipefail
 ID_FILE="${XDG_RUNTIME_DIR:-/tmp}/media-key.notify-id"
@@ -46,5 +47,13 @@ case "${1:-}" in
               wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SOURCE@ 5%+ && volume_osd @DEFAULT_AUDIO_SOURCE@ Mic ;;
     mic-down) wpctl set-volume @DEFAULT_AUDIO_SOURCE@ 5%- && volume_osd @DEFAULT_AUDIO_SOURCE@ Mic ;;
     mic-mute) wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle && volume_osd @DEFAULT_AUDIO_SOURCE@ Mic ;;
+    mute-all) # follow the speaker: it gets toggled, the mic copies its new state
+              wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
+              if wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null | grep -q MUTED; then
+                  wpctl set-mute @DEFAULT_AUDIO_SOURCE@ 1; osd "Speaker + mic muted" "Fn+mute again to turn both back on"
+              else
+                  wpctl set-mute @DEFAULT_AUDIO_SOURCE@ 0; osd "Speaker + mic on" ""
+              fi
+              aro-bar-refresh audio 2>/dev/null || true ;;
     *) sed -n '2,5p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

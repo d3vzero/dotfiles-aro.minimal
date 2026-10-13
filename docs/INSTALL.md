@@ -295,8 +295,10 @@ Patch aro `0008-bar-segments` + script `aro-bar`:
   utama.
 - **MIC / SPK** (kiri bawah): `MIC 80%` dan `SPK 45% JBL Go 4` (redup kalau mute).
   Klik → `audio-menu`: pilih perangkat default (● = aktif; stream yang sedang jalan
-  ikut pindah) atau Volume +5% / -5% / Mute. Mikrofon juga lewat `XF86AudioMicMute`
-  dan `Super+Shift+F10/F11/F12` (mute / turun / naik), speaker `Super+F10/F11/F12`.
+  ikut pindah) atau Volume +5% / -5% / Mute. Ganti output tidak memindah mikrofon.
+  Volume mikrofon: `Super+,` / `Super+.` (turun / naik, tanpa Fn). **Fn+mute** (Fn+I)
+  me-mute speaker **dan** mikrofon sekaligus; tekan lagi untuk menyalakan keduanya.
+  Speaker: Fn+Y / Fn+U, atau `Super+F10/F11/F12`.
 - **REC** dan **pengaturan rekam** (kanan bawah, di antara USB dan Display):
   `REC` redup saat diam, `● REC 01:23` terang saat merekam; klik = mulai/stop (sama
   dengan `Super+Shift+R`). Di sebelahnya `native MP4` / `1920x1200 MKV`; klik →

@@ -38,7 +38,14 @@ esac
 want="${choice:3}"
 for d in "${devs[@]}"; do
     if [ "${d#*$'\t'}" = "$want" ]; then
+        # Picking an output must not move the microphone (a Bluetooth speaker with
+        # a mic can drag the default input along): keep the input as it was.
+        src_before="$(pactl get-default-source 2>/dev/null)"
         pactl "$setdef" "${d%%$'\t'*}"
+        if [ "$kind" = output ] && [ -n "$src_before" ]; then
+            sleep 0.3
+            [ "$(pactl get-default-source 2>/dev/null)" = "$src_before" ] || pactl set-default-source "$src_before"
+        fi
         notify-send -a Media -t 2000 "$title" "$want" 2>/dev/null
         aro-bar-refresh audio 2>/dev/null || true
         exit 0
