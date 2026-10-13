@@ -293,6 +293,13 @@ Patch aro `0008-bar-segments` + script `aro-bar`:
   lebih dari satu, lalu resolusi + refresh. Mode tersimpan per monitor
   (`~/.local/state/aro-monitor/<output>.mode`); `MONITOR_MODES` hanya untuk monitor
   utama.
+- **REC** dan **pengaturan rekam** (kanan bawah, di antara USB dan Display):
+  `REC` redup saat diam, `● REC 01:23` terang saat merekam; klik = mulai/stop (sama
+  dengan `Super+Shift+R`). Di sebelahnya `native MP4` / `1920x1200 MKV`; klik →
+  pilih resolusi (hanya yang rasionya sama dengan monitor, jadi tidak gepeng) lalu
+  format (mp4 / mkv). Tersimpan di `~/.config/casual-record.conf`, berlaku untuk
+  rekaman berikutnya. Turun resolusi: NVIDIA/CPU lewat filter `scale`, AMD/Intel
+  lewat `scale_vaapi`.
 - **USB** (kanan bawah): `USB <label>` terang kalau ada perangkat yang dipasang
   udiskie di `/run/media/$USER`, `USB 2` kalau lebih dari satu, `USB` redup kalau
   kosong. Klik → `usb-open`: superfile langsung di perangkat itu (lebih dari satu:

@@ -7,6 +7,8 @@
 #   bt      nama perangkat (terang) | BT (redup) | BT off (redup)
 #   usb     USB <label> / USB 2 (terang, ada yang terpasang) | USB (redup)
 #   display 2560x1600@300 | DP-3 2560x1600@300  HDMI-A-1 1920x1080@60 (lebih dari satu)
+#   rec     ● REC 01:23 (terang, sedang merekam) | REC (redup)
+#   recset  native MP4 / 1920x1200 MKV (redup; klik = ganti resolusi/format)
 # Dijalankan dari config aro (exec = aro-bar). Satu putaran tiap INTERVAL
 # detik dengan builtin bash; nvidia-smi satu proses yang terus berjalan;
 # nmcli/bluetoothctl hanya tiap beberapa putaran.
@@ -20,7 +22,7 @@ mkdir -p "$DIR"
 exec 9>"$DIR/.lock"
 flock -n 9 || exit 0                      # satu instance saja
 
-cleanup() { [ -n "${GPUPID:-}" ] && kill "$GPUPID" 2>/dev/null; rm -f "$DIR"/sysmon "$DIR"/net "$DIR"/bt "$DIR"/usb "$DIR"/display "$GPUF"; }
+cleanup() { [ -n "${GPUPID:-}" ] && kill "$GPUPID" 2>/dev/null; rm -f "$DIR"/sysmon "$DIR"/net "$DIR"/bt "$DIR"/usb "$DIR"/display "$DIR"/rec "$DIR"/recset "$GPUF"; }
 trap cleanup EXIT
 trap 'exit 0' TERM INT
 
@@ -101,6 +103,24 @@ disp_text() {   # mode aktif tiap monitor (wlr-randr), dibaca tiap 10 detik
               if (n) print "" }'
 }
 
+REC_STATE="$RUN/casual-record"
+rec_text() {   # durasi dari file start yang ditulis casual-record (tanpa proses baru)
+    local pid start now
+    if [ -r "$REC_STATE/pid" ] && read -r pid < "$REC_STATE/pid" && kill -0 "$pid" 2>/dev/null &&
+       [ -r "$REC_STATE/start" ] && read -r start < "$REC_STATE/start"; then
+        printf -v now '%(%s)T' -1
+        local d=$((now - start))
+        printf '● REC %02d:%02d\n' $((d / 60)) $((d % 60))
+    else
+        echo "~REC"
+    fi
+}
+recset_text() {
+    local RES=native FORMAT=mp4
+    [ -r "$HOME/.config/casual-record.conf" ] && . "$HOME/.config/casual-record.conf"
+    echo "~$RES ${FORMAT^^}"
+}
+
 read_cpu; P_IDLE=$CPU_IDLE; P_TOT=$CPU_TOT
 read_net; P_RX=$NET_RX; P_TX=$NET_TX
 NAME="$(net_name)"; BT="$(bt_text)" || BT=""; DISP="$(disp_text)" || DISP=""
@@ -142,6 +162,8 @@ while [ -S "$RUN/${WAYLAND_DISPLAY:-wayland-0}" ]; do   # berhenti saat sesi aro
     if [ -n "$BT" ]; then put bt "$BT"; else rm -f "$DIR/bt"; fi
 
     put usb "$(usb_text)"
+    put rec "$(rec_text)"
+    put recset "$(recset_text)"
 
     (( n % 5 == 0 )) && { DISP="$(disp_text)" || DISP=""; }   # tiap 10 detik (monitor baru ikut)
     if [ -n "$DISP" ]; then put display "$DISP"; else rm -f "$DIR/display"; fi

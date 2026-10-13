@@ -1,16 +1,72 @@
 #!/bin/bash
-# casual-record -- Super+Shift+R toggles a screen recording of the focused monitor
-# at its active resolution, with desktop audio + microphone mixed, as .mp4 in
-# ~/Movies/Casual. Video encoder follows GPU in the machine config:
+# casual-record -- screen recording of the focused monitor, desktop audio + mic
+# mixed, saved in ~/Movies/Casual.
+#   casual-record            start / stop (Super+Shift+R, bar segment "REC")
+#   casual-record settings   resolution (same aspect as the monitor) and format
+# Settings: ~/.config/casual-record.conf (RES=native|WxH, FORMAT=mp4|mkv).
+# Video encoder follows GPU in the machine config:
 # nvidia -> h264_nvenc, amd/intel -> h264_vaapi, otherwise libx264.
 set -uo pipefail
 STATE="${XDG_RUNTIME_DIR:-/tmp}/casual-record"
+BAR="${XDG_RUNTIME_DIR:-/tmp}/aro-bar"
 OUT_DIR="$HOME/Movies/Casual"
 CONF=/etc/dotfiles-aro.minimal.conf
+USERCONF="$HOME/.config/casual-record.conf"
 GPU="$( . "$CONF" 2>/dev/null; echo "${GPU:-}" )"
 FPS="$( . "$CONF" 2>/dev/null; echo "${RECORD_FPS:-60}" )"
+RES=native; FORMAT=mp4
+[ -f "$USERCONF" ] && . "$USERCONF"
 notify() { notify-send -a "Casual Record" "$@" 2>/dev/null || true; }
 mkdir -p "$STATE" "$OUT_DIR"
+
+focused_output() { aroctl -j monitors 2>/dev/null | jq -r '.[] | select(.focused) | .name' | head -n1; }
+
+native_size() {      # WxH of the output's current mode
+    wlr-randr 2>/dev/null | awk -v o="$1" '
+        /^[^ \t]/ { on = ($1 == o); next }
+        on && / px, .*current/ { print $1; exit }'
+}
+
+bar_rec() {          # refresh the bar segments now instead of on the next tick
+    mkdir -p "$BAR" 2>/dev/null || return 0
+    if [ "${1:-}" = on ]; then printf '● REC 00:00\n' > "$BAR/rec"; else printf '~REC\n' > "$BAR/rec"; fi
+    printf '~%s %s\n' "$( [ "$RES" = native ] && echo native || echo "$RES")" "${FORMAT^^}" > "$BAR/recset"
+}
+
+settings() {
+    local o nat w h list choice f rec="" tag="" when
+    running && rec=1 && tag="● REC  "        # recording now: say so in every prompt
+    o="$(focused_output)"; nat="$(native_size "$o")"
+    w="${nat%x*}"; h="${nat#*x}"
+    # sizes with the monitor's own aspect only: anything else gets stretched
+    if   [ -n "$w" ] && (( w * 10 == h * 16 )); then list="2560x1600 1920x1200 1680x1050 1440x900 1280x800"
+    elif [ -n "$w" ] && (( w * 9 == h * 16 ));  then list="3840x2160 2560x1440 1920x1080 1600x900 1280x720"
+    else list=""; fi
+    choice="$( { echo "native  (${nat:-monitor})"
+                 for r in $list; do (( ${r%x*} < ${w:-0} )) && echo "$r"; done; } |
+               fuzzel --dmenu --lines 6 --width 34 --prompt "${tag}Rec resolution ❯ " )" || exit 0
+    case "$choice" in native*) RES=native ;; *) RES="$choice" ;; esac
+    f="$(printf 'mp4\nmkv  (aman kalau crash, bisa diubah ke mp4 nanti)\n' |
+         fuzzel --dmenu --lines 2 --width 52 --prompt "${tag}Rec format ❯ ")" || exit 0
+    FORMAT="${f%% *}"
+    mkdir -p "$(dirname "$USERCONF")"
+    printf 'RES=%s\nFORMAT=%s\n' "$RES" "$FORMAT" > "$USERCONF"
+    if [ -z "$rec" ]; then
+        bar_rec off
+        notify "Recording settings" "$RES, $FORMAT"
+        return
+    fi
+    # Recording now. One video file cannot change size or container halfway,
+    # so "now" means: close this file and go on in a new one right away.
+    when="$(printf 'Next recording\nNow (stop this file, continue in a new one)\n' |
+            fuzzel --dmenu --lines 2 --width 52 --prompt "● REC  Apply ❯ ")" || when="Next"
+    if [[ "$when" == Now* ]]; then
+        "$0"                                  # stop: closes the current file cleanly
+        exec "$0"                             # start again with the new settings
+    fi
+    bar_rec on
+    notify "Recording settings" "$RES, $FORMAT -- applies to the next recording (still recording now)"
+}
 
 running() { [ -f "$STATE/pid" ] && kill -0 "$(cat "$STATE/pid")" 2>/dev/null; }
 
@@ -23,6 +79,8 @@ unload_audio() {
     rm -f "$STATE/modules"
 }
 
+if [ "${1:-}" = settings ]; then settings; exit 0; fi
+
 if running; then
     pid="$(cat "$STATE/pid")"
     kill -INT "$pid"                         # wf-recorder finishes the .mp4 cleanly
@@ -31,14 +89,16 @@ if running; then
         kill -TERM "$pid"
         for _ in $(seq 1 20); do kill -0 "$pid" 2>/dev/null || break; sleep 0.25; done
     fi
-    rm -f "$STATE/pid"
+    rm -f "$STATE/pid" "$STATE/start"
     unload_audio
+    bar_rec off
     notify "Recording stopped" "$(cat "$STATE/file" 2>/dev/null)"
     exit 0
 fi
 
-out="$(aroctl -j monitors 2>/dev/null | jq -r '.[] | select(.focused) | .name' | head -n1)"
-file="$OUT_DIR/casual_$(date +%Y%m%d_%H%M%S).mp4"
+out="$(focused_output)"
+case "$FORMAT" in mkv) ext=mkv ;; *) ext=mp4 ;; esac
+file="$OUT_DIR/casual_$(date +%Y%m%d_%H%M%S).$ext"
 
 # audio: desktop (monitor of the default sink) + default mic into one null sink
 sink="$(pactl get-default-sink 2>/dev/null)"; src="$(pactl get-default-source 2>/dev/null)"
@@ -60,14 +120,27 @@ case "$GPU" in
     *)         video=(-c libx264 -p preset=veryfast) ;;
 esac
 
-wf-recorder ${out:+-o "$out"} -r "$FPS" "${video[@]}" "${audio[@]}" -f "$file" \
+# scale down to the chosen size (same aspect as the monitor, so nothing stretches)
+filter=()
+if [ "$RES" != native ] && [[ "$RES" =~ ^[0-9]+x[0-9]+$ ]]; then
+    case "$GPU" in
+        amd|intel) filter=(-F "scale_vaapi=w=${RES%x*}:h=${RES#*x}") ;;
+        *)         filter=(-F "scale=${RES%x*}:${RES#*x}:flags=bicubic") ;;
+    esac
+fi
+
+wf-recorder ${out:+-o "$out"} -r "$FPS" "${video[@]}" "${filter[@]}" "${audio[@]}" -f "$file" \
     > "$STATE/log" 2>&1 &
 echo $! > "$STATE/pid"
+printf '%(%s)T\n' -1 > "$STATE/start"
 echo "$file" > "$STATE/file"
 sleep 1
 if ! running; then
     unload_audio
+    rm -f "$STATE/start"
+    bar_rec off
     notify -u critical "Recording failed" "See $STATE/log"
     exit 1
 fi
-notify "Recording" "${out:-screen} → $file  (Super+Shift+R to stop)"
+bar_rec on
+notify "Recording" "${out:-screen} → $file  (Super+Shift+R / klik REC untuk stop)"
