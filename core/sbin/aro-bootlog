@@ -7,22 +7,33 @@ LOGDIR=/var/log/aro
 KEEP="$( . /etc/dotfiles-aro.minimal.conf 2>/dev/null; echo "${LOG_KEEP_DAYS:-30}" )"
 id="$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)"
 
+# dinit menganggap syslog-ng siap begitu prosesnya jalan, sebelum /dev/log ada:
+# kirim ulang sampai diterima (maks 10 detik), jangan hilang diam-diam
+log() {
+    local i
+    for i in $(seq 1 50); do
+        logger --socket-errors=on "$@" 2>/dev/null && return 0
+        sleep 0.2
+    done
+    return 1
+}
+
 case "${1:-}" in
 start)
-    logger -t aro-boot "boot $id kernel $(uname -r)"
+    log -t aro-boot "boot $id kernel $(uname -r)"
     modprobe efi_pstore 2>/dev/null
     mountpoint -q /sys/fs/pstore || mount -t pstore pstore /sys/fs/pstore 2>/dev/null
     if compgen -G "/sys/fs/pstore/*" >/dev/null; then
         d="$LOGDIR/pstore/$(date +%Y-%m-%d_%H%M%S)"
         mkdir -p "$d" && cp -a /sys/fs/pstore/. "$d"/ && rm -f /sys/fs/pstore/*
         chgrp -R log "$d" 2>/dev/null; chmod -R g+rX "$d" 2>/dev/null
-        logger -p kern.crit -t aro-boot "pstore: catatan crash boot sebelumnya disimpan di $d"
+        log -p kern.crit -t aro-boot "pstore: catatan crash boot sebelumnya disimpan di $d"
     fi
     find "$LOGDIR" -maxdepth 1 -name '*.log' -mtime +"$KEEP" -delete 2>/dev/null
     [ -d "$LOGDIR/pstore" ] && find "$LOGDIR/pstore" -mindepth 1 -maxdepth 1 -mtime +"$KEEP" -exec rm -rf {} + 2>/dev/null
     exit 0 ;;
 stop)
-    logger -t aro-boot "shutdown clean $id uptime $(cut -d' ' -f1 /proc/uptime)s"
+    log -t aro-boot "shutdown clean $id uptime $(cut -d' ' -f1 /proc/uptime)s"
     sleep 1                       # beri syslog-ng waktu menulis sebelum ia ikut berhenti
     exit 0 ;;
 *)  echo "pakai: aro-bootlog start|stop" >&2; exit 1 ;;
