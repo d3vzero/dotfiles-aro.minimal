@@ -1,0 +1,23 @@
+# ~/.bashrc -- dari dotfiles-aro.minimal (core/home/bashrc), ditimpa setiap update.sh
+[[ $- != *i* ]] && return
+
+HISTSIZE=10000
+HISTFILESIZE=10000
+shopt -s histappend checkwinsize
+PS1='[\u@\h \W]\$ '
+
+# ble.sh (BLESH=yes): saran otomatis dari riwayat + pewarnaan sintaks, di atas bash.
+# Cache-nya dipindah ke ~/.local/state: ~/.cache adalah tmpfs (kosong tiap boot),
+# tanpa ini terminal pertama setelah boot selalu menulis ulang "tput cache".
+if [ -f /usr/local/share/blesh/ble.sh ]; then
+    _ble_cache_saved="${XDG_CACHE_HOME:-}"
+    export XDG_CACHE_HOME="$HOME/.local/state/ble-cache"
+    mkdir -p "$XDG_CACHE_HOME"
+    source /usr/local/share/blesh/ble.sh --noattach
+    if [ -n "$_ble_cache_saved" ]; then export XDG_CACHE_HOME="$_ble_cache_saved"; else unset XDG_CACHE_HOME; fi
+    unset _ble_cache_saved
+fi
+
+# --- kustomisasi lain di sini, SEBELUM baris ble-attach ---
+
+[[ ${BLE_VERSION-} ]] && ble-attach

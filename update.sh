@@ -21,7 +21,7 @@ load_conf "$CONF"
 step "[1/8] Cek hardware vs config";    validate_hw
 step "[2/8] Repo Arch + full upgrade";   enable_repos
 step "[3/8] Paket (core + $PROFILES)";   install_packages; setup_initramfs
-step "[4/8] aro + superfile";            build_aro; install_superfile
+step "[4/8] aro + superfile + ble.sh";   build_aro; install_superfile; install_blesh
 step "[5/8] File sistem + service + tmpfs"; install_system_files; enable_services; setup_logging; apply_tmpfs
 step "[6/8] Setup profil";               run_profile_hooks
 step "[7/8] Home $PUBLIC_USER";          setup_public_home

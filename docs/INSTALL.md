@@ -337,6 +337,15 @@ Artix tidak punya journald: tanpa ini log boot sebelumnya hilang saat reboot. De
   task, suhu, I/O error), dan 20 baris terakhir sebelum berhenti.
 - Config syslog-ng asli disimpan sebagai `/etc/syslog-ng/syslog-ng.conf.orig`.
 
+## 4i. ble.sh (`BLESH`)
+
+`BLESH="yes"` (default): ble.sh dibangun sekali dari source ke `/usr/local/share/blesh`
+(tidak ada di repo resmi), dan `~/.bashrc` akun umum (dari `core/home/bashrc`, ditimpa
+tiap update) memuatnya: saran otomatis dari riwayat (→ untuk menerima) dan warna
+sintaks. Cache ble.sh di `~/.local/state/ble-cache` karena `~/.cache` tmpfs.
+Build ulang ke versi terbaru: `sudo UPDATE_BLESH=1 update.sh`. Biaya: tiap shell
+interaktif sekitar 15–30 MB lebih besar dan mulai sedikit lebih lambat.
+
 ## 5. Admin & update
 
 Admin login di tty lain: `Ctrl+Alt+F2` → login `Admin`.

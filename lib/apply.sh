@@ -45,6 +45,7 @@ load_conf() {
     ENABLE_BLUETOOTH="${ENABLE_BLUETOOTH:-no}"   # config lama belum punya baris ini
     PUBLIC_NETWORK_CONTROL="${PUBLIC_NETWORK_CONTROL:-no}"
     LOG_PERSIST="${LOG_PERSIST:-yes}"
+    BLESH="${BLESH:-yes}"
     LOG_KEEP_DAYS="${LOG_KEEP_DAYS:-30}"
 
     case "$CPU" in amd|intel) ;; *) die "CPU='$CPU' tidak valid (amd | intel)" ;; esac
@@ -265,6 +266,22 @@ build_aro() {
     rm -rf /usr/share/backgrounds/aro
 }
 
+# ble.sh: dibangun sekali untuk semua user ke /usr/local/share/blesh (bukan AUR;
+# tidak ada di repo resmi). Dipakai ~/.bashrc akun umum (core/home/bashrc).
+# UPDATE_BLESH=1 untuk build ulang dari versi terbaru.
+install_blesh() {
+    [ "$BLESH" = "yes" ] || return 0
+    if [ -f /usr/local/share/blesh/ble.sh ] && [ "${UPDATE_BLESH:-0}" != "1" ]; then
+        echo "    ble.sh sudah ada -- skip (UPDATE_BLESH=1 untuk build ulang)"
+        return 0
+    fi
+    rm -rf /opt/blesh-src
+    git clone --quiet --recursive --depth 1 --shallow-submodules \
+        https://github.com/akinomyoga/ble.sh.git /opt/blesh-src
+    make -s -C /opt/blesh-src install PREFIX=/usr/local
+    echo "    ble.sh dipasang ke /usr/local/share/blesh ($(git -C /opt/blesh-src rev-parse --short HEAD))"
+}
+
 install_superfile() {
     mkdir -p "$STATE_DIR"
     local have=""
@@ -395,6 +412,8 @@ setup_public_home() {
                "$H/.config/gtk-4.0" "$H/.config/xdg-desktop-portal" \
                "$H/.config/xdg-desktop-portal-wlr" "$H/.local/share/applications"
 
+    # .bashrc (prompt, riwayat, ble.sh)
+    install -m644 "$REPO_DIR/core/home/bashrc" "$H/.bashrc"
     # .bash_profile
     {
         echo '[ -f ~/.bashrc ] && . ~/.bashrc'
