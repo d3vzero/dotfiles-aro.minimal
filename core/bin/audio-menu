@@ -1,0 +1,46 @@
+#!/bin/bash
+# audio-menu output|input -- bottom bar segments SPK / MIC (click).
+# Pick the default output (speaker, headset, Bluetooth like JBL Go 4) or input
+# (microphone), plus volume up / down / mute. Running streams move along with
+# the default device (WirePlumber).
+set -uo pipefail
+kind="${1:-output}"
+case "$kind" in
+    output) list=sinks;   getdef=get-default-sink;   setdef=set-default-sink
+            dev=@DEFAULT_AUDIO_SINK@;   title="Output"; mk=(up down mute) ;;
+    input)  list=sources; getdef=get-default-source; setdef=set-default-source
+            dev=@DEFAULT_AUDIO_SOURCE@; title="Input";  mk=(mic-up mic-down mic-mute) ;;
+    *) echo "usage: audio-menu output|input" >&2; exit 1 ;;
+esac
+
+def="$(pactl "$getdef" 2>/dev/null)"
+# name<TAB>description; inputs: no ".monitor" of outputs; never the recorder's mix sink
+mapfile -t devs < <(pactl -f json list "$list" 2>/dev/null |
+    jq -r '.[] | select((.name | endswith(".monitor") | not) and (.name | startswith("casual_record_mix") | not))
+                | "\(.name)\t\(.description)"')
+vol="$(wpctl get-volume "$dev" 2>/dev/null | awk '{ printf "%d%%%s", $2 * 100 + 0.5, ($3 ~ /MUTED/ ? " muted" : "") }')"
+
+menu=""
+for d in "${devs[@]}"; do
+    name="${d%%$'\t'*}"; desc="${d#*$'\t'}"
+    if [ "$name" = "$def" ]; then menu+="●  $desc"$'\n'; else menu+="   $desc"$'\n'; fi
+done
+menu+="Volume +5%"$'\n'"Volume -5%"$'\n'"Mute / unmute"$'\n'
+lines=$(( ${#devs[@]} + 3 ))
+
+choice="$(printf '%s' "$menu" | fuzzel --dmenu --lines "$lines" --width 50 \
+          --prompt "$title ${vol:-?} ❯ ")" || exit 0
+case "$choice" in
+    "Volume +5%")    exec media-key "${mk[0]}" ;;
+    "Volume -5%")    exec media-key "${mk[1]}" ;;
+    "Mute / unmute") exec media-key "${mk[2]}" ;;
+esac
+want="${choice:3}"
+for d in "${devs[@]}"; do
+    if [ "${d#*$'\t'}" = "$want" ]; then
+        pactl "$setdef" "${d%%$'\t'*}"
+        notify-send -a Media -t 2000 "$title" "$want" 2>/dev/null
+        aro-bar-refresh audio 2>/dev/null || true
+        exit 0
+    fi
+done

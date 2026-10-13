@@ -1,0 +1,13 @@
+#!/bin/bash
+# aro-bar-refresh audio -- tulis ulang segmen SPK / MIC sekarang (setelah ganti
+# volume atau perangkat), tanpa menunggu putaran aro-bar berikutnya.
+set -u
+DIR="${XDG_RUNTIME_DIR:?}/aro-bar"
+[ -d "$DIR" ] || exit 0
+put() { printf '%s\n' "$2" > "$DIR/.$1.r" && mv -f "$DIR/.$1.r" "$DIR/$1"; }
+case "${1:-}" in
+    audio)
+        # shellcheck source=/dev/null
+        . /usr/local/bin/aro-bar-audio.sh
+        put spk "$(spk_text)"; put mic "$(mic_text)" ;;
+esac

@@ -293,6 +293,10 @@ Patch aro `0008-bar-segments` + script `aro-bar`:
   lebih dari satu, lalu resolusi + refresh. Mode tersimpan per monitor
   (`~/.local/state/aro-monitor/<output>.mode`); `MONITOR_MODES` hanya untuk monitor
   utama.
+- **MIC / SPK** (kiri bawah): `MIC 80%` dan `SPK 45% JBL Go 4` (redup kalau mute).
+  Klik → `audio-menu`: pilih perangkat default (● = aktif; stream yang sedang jalan
+  ikut pindah) atau Volume +5% / -5% / Mute. Mikrofon juga lewat `XF86AudioMicMute`
+  dan `Super+Shift+F10/F11/F12` (mute / turun / naik), speaker `Super+F10/F11/F12`.
 - **REC** dan **pengaturan rekam** (kanan bawah, di antara USB dan Display):
   `REC` redup saat diam, `● REC 01:23` terang saat merekam; klik = mulai/stop (sama
   dengan `Super+Shift+R`). Di sebelahnya `native MP4` / `1920x1200 MKV`; klik →

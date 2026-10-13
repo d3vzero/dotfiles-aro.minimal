@@ -2,6 +2,7 @@
 # media-key ACTION -- media & volume keys.
 #   play | next | prev | stop   -> playerctl (MPRIS: Sung, Firefox, mpv)
 #   up | down | mute            -> wpctl (PipeWire default output), max 100%
+#   mic-up | mic-down | mic-mute -> the same for the default input (microphone)
 # Shows one notification that is replaced on each press (no stacking).
 set -uo pipefail
 ID_FILE="${XDG_RUNTIME_DIR:-/tmp}/media-key.notify-id"
@@ -20,14 +21,15 @@ now_playing() {
     [ -n "$t" ] && osd "$1" "$t"
 }
 
-volume_osd() {
-    local v pct
-    v="$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null)"      # "Volume: 0.45 [MUTED]"
+volume_osd() {   # volume_osd [@DEFAULT_AUDIO_SINK@|@DEFAULT_AUDIO_SOURCE@] [title]
+    local dev="${1:-@DEFAULT_AUDIO_SINK@}" name="${2:-Volume}" v pct
+    v="$(wpctl get-volume "$dev" 2>/dev/null)"      # "Volume: 0.45 [MUTED]"
     pct="$(awk '{ printf "%d", $2 * 100 + 0.5 }' <<<"$v")"
     case "$v" in
-        *MUTED*) osd "Volume muted" "$pct%" "$pct" ;;
-        *)       osd "Volume" "$pct%" "$pct" ;;
+        *MUTED*) osd "$name muted" "$pct%" "$pct" ;;
+        *)       osd "$name" "$pct%" "$pct" ;;
     esac
+    aro-bar-refresh audio 2>/dev/null || true       # bar now, not on the next tick
 }
 
 case "${1:-}" in
@@ -40,5 +42,9 @@ case "${1:-}" in
           wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+ && volume_osd ;;
     down) wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%- && volume_osd ;;
     mute) wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle && volume_osd ;;
+    mic-up)   wpctl set-mute @DEFAULT_AUDIO_SOURCE@ 0
+              wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SOURCE@ 5%+ && volume_osd @DEFAULT_AUDIO_SOURCE@ Mic ;;
+    mic-down) wpctl set-volume @DEFAULT_AUDIO_SOURCE@ 5%- && volume_osd @DEFAULT_AUDIO_SOURCE@ Mic ;;
+    mic-mute) wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle && volume_osd @DEFAULT_AUDIO_SOURCE@ Mic ;;
     *) sed -n '2,5p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
