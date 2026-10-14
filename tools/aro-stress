@@ -6,18 +6,18 @@
 # Detectron2), aksi multi-monitor otomatis, cek error GPU & log aro di akhir.
 #
 # Pakai (dari kitty, sebagai user yang login di aro):
-#   setsid -f ~/.local/bin/aro-stress 8 >/dev/null 2>&1     # 8 jam, jalan di latar
+#   setsid -f aro-stress 8 >/dev/null 2>&1     # 8 jam, jalan di latar
 # Pantau:   tail -f ~/aro-stress/latest/actions.log
 # Berhenti: touch ~/aro-stress/STOP
 #
 # File uji opsional (path TANPA spasi), set sebelum menjalankan, contoh:
 #   FREECAD_FILE=~/uji/part.FCStd KICAD_FILE=~/uji/board.kicad_pro \
 #   PDF_FILE=~/uji/doc.pdf OFFICE_FILE=~/uji/lap.docx \
-#   setsid -f ~/.local/bin/aro-stress 8 >/dev/null 2>&1
+#   setsid -f aro-stress 8 >/dev/null 2>&1
 #
 # Beban GPU paralel (opsional) — perintah dijalankan berulang selama tes:
 #   GPU_LOAD_CMD="/opt/detectron2/venv/bin/python /opt/dotfiles-aro.minimal/tools/d2-infer-load.py $HOME/uji/gambar 20" \
-#   setsid -f ~/.local/bin/aro-stress 8 >/dev/null 2>&1
+#   setsid -f aro-stress 8 >/dev/null 2>&1
 
 HOURS=${1:-8}
 MAXWIN=${MAXWIN:-10}            # batas jumlah window sebelum mulai menutup
@@ -129,8 +129,13 @@ start_sub() {
 snapshot() { ctl windows > "$RUN/last-windows.txt" 2>/dev/null; }
 
 # ── aksi ──────────────────────────────────────────────────────────────────
-do_act() { ctl dispatch "$@" >/dev/null 2>&1 && { log "$*"; ACTIONS=$((ACTIONS+1)); } \
-                                             || log "GAGAL: $*"; }
+# Grup/tab ditolak aro kalau tidak berlaku (tidak ada tetangga ke arah itu, jendela
+# tidak di grup, tidak ada tab): itu jawaban yang benar, bukan kegagalan -> "N/A".
+do_act() {
+    if ctl dispatch "$@" >/dev/null 2>&1; then log "$*"; ACTIONS=$((ACTIONS+1))
+    else case "$1" in group|ungroup|tab) log "N/A: $*" ;; *) log "GAGAL: $*" ;; esac
+    fi
+}
 
 # spawn_app <pola-ERE app_id/title> <batas> <perintah...>
 spawn_app() {
@@ -270,6 +275,7 @@ finish() {
         echo "Durasi       : $dur menit (target $((HOURS*60)))"
         echo "Aksi sukses  : $ACTIONS"
         echo "Aksi gagal   : $(grep -c ' GAGAL: ' "$ACT")"
+        echo "Tidak berlaku: $(grep -c ' N/A: ' "$ACT")  (grup/tab tanpa tetangga atau grup -- wajar)"
         echo "Crash aro    : $CRASHES  (detail: $RUN/crash/)"
         echo "Hang aro     : $HANGS  (detail: $RUN/hang/)"
         awk -F, 'NR>1{ if($4>max)max=$4; last=$4;
@@ -282,7 +288,14 @@ finish() {
         if [ -n "$GPU_LOAD_CMD" ]; then
             echo "Beban GPU    : $(grep -c . "$GPL" 2>/dev/null) run, $(grep -vc ' rc=0 ' "$GPL" 2>/dev/null) gagal (detail: $GPL)"
         fi
-        echo "Error di log aro (sesi ini): $(grep -ciE 'error|fail' "$LOGDIR/aro.log" 2>/dev/null)"
+        # hanya baris sejak tes mulai, hanya penanda level error (bukan kata "fail" di pesan biasa)
+        local errs
+        errs="$(tail -n +"$((LOG0 + 1))" "$LOGDIR/aro.log" 2>/dev/null | grep -E '\[(ERROR|error|E)\]|\bERROR\b')"
+        echo "Error di log aro (sesi ini): $(printf '%s' "$errs" | grep -c .)"
+        if [ -n "$errs" ]; then
+            echo "  terbanyak (angka disamakan):"
+            printf '%s\n' "$errs" | sed -E 's/^[^]]*\] *//; s/[0-9]+/N/g' | sort | uniq -c | sort -rn | head -8 | sed 's/^/  /'
+        fi
         echo
         echo "Error GPU di kernel:"
         if k=$(dmesg 2>/dev/null); then
@@ -294,7 +307,7 @@ finish() {
         fi
         echo
         echo "Aksi terbanyak:"
-        grep -v -e 'GAGAL' -e '===' "$ACT" | awk '{print $2}' | sort | uniq -c | sort -rn | head -10
+        grep -v -e 'GAGAL' -e 'N/A' -e '===' "$ACT" | awk '{print $2}' | sort | uniq -c | sort -rn | head -10
     } > "$SUM"
     log "tes selesai, ringkasan: $SUM"
 }
@@ -308,6 +321,7 @@ GPUK=$(gpu_kind)
 NMON=$(nmon)
 system_info
 START=$(date +%s); END=$((START + HOURS*3600))
+LOG0=$(wc -l < "$LOGDIR/aro.log" 2>/dev/null || echo 0)   # error dihitung mulai baris ini
 CRASHES=0; HANGS=0; ACTIONS=0; LASTMET=0
 RSS0=$(rssmb "$CUR")
 echo "time,menit,aro_pid,aro_rss_mb,xwayland_rss_mb,ram_used_mb,gpu_vram_mb,gpu_util,gpu_temp,windows,crash,hang,aksi" > "$MET"
