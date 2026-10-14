@@ -14,6 +14,10 @@ case "$kind" in
 esac
 
 def="$(pactl "$getdef" 2>/dev/null)"
+# AUDIO_HIDE_OUTPUTS (config mesin): output yang tidak pernah ditawarkan, regex
+# tanpa beda huruf besar/kecil, mis. "Meteor" (jack headphone di mikrofon USB)
+HIDE=""
+[ "$kind" = output ] && HIDE="$( . /etc/dotfiles-aro.minimal.conf 2>/dev/null; echo "${AUDIO_HIDE_OUTPUTS:-}" )"
 # name<TAB>description; inputs: no ".monitor" of outputs; never the recorder's mix sink
 mapfile -t devs < <(pactl -f json list "$list" 2>/dev/null |
     jq -r '.[] | select((.name | endswith(".monitor") | not) and (.name | startswith("casual_record_mix") | not))
@@ -21,6 +25,13 @@ mapfile -t devs < <(pactl -f json list "$list" 2>/dev/null |
 vol="$(wpctl get-volume "$dev" 2>/dev/null | awk '{ printf "%d%%%s", $2 * 100 + 0.5, ($3 ~ /MUTED/ ? " muted" : "") }')"
 
 menu=""
+shown=()
+for d in "${devs[@]}"; do
+    desc="${d#*$'\t'}"
+    if [ -n "$HIDE" ] && grep -qiE "$HIDE" <<<"$desc" && [ "${d%%$'\t'*}" != "$def" ]; then continue; fi
+    shown+=("$d")
+done
+devs=("${shown[@]}")
 for d in "${devs[@]}"; do
     name="${d%%$'\t'*}"; desc="${d#*$'\t'}"
     if [ "$name" = "$def" ]; then menu+="●  $desc"$'\n'; else menu+="   $desc"$'\n'; fi

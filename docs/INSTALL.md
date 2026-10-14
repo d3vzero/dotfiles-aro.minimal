@@ -299,6 +299,9 @@ Patch aro `0008-bar-segments` + script `aro-bar`:
   Volume mikrofon: `Super+,` / `Super+.` (turun / naik, tanpa Fn). **Fn+mute** (Fn+I)
   me-mute speaker **dan** mikrofon sekaligus; tekan lagi untuk menyalakan keduanya.
   Speaker: Fn+Y / Fn+U, atau `Super+F10/F11/F12`.
+  Nama perangkat di bar dipendekkan (akhiran `Analog Stereo` dsb. dibuang, dipotong di
+  batas kata). Output yang tidak dipakai (mis. jack headphone di mikrofon USB)
+  disembunyikan lewat `AUDIO_HIDE_OUTPUTS="Meteor"` di config mesin.
 - **REC** dan **pengaturan rekam** (kanan bawah, di antara USB dan Display):
   `REC` redup saat diam, `● REC 01:23` terang saat merekam; klik = mulai/stop (sama
   dengan `Super+Shift+R`). Di sebelahnya `native MP4` / `1920x1200 MKV`; klik →
