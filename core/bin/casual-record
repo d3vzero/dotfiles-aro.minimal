@@ -1,6 +1,6 @@
 #!/bin/bash
 # casual-record -- screen recording of the focused monitor, desktop audio + mic
-# mixed, saved in ~/Movies/Casual.
+# mixed, saved in ~/Videos/Casual.
 #   casual-record            start / stop (Super+Shift+R, bar segment "REC")
 #   casual-record settings   resolution (same aspect as the monitor) and format
 # Settings: ~/.config/casual-record.conf (RES=native|WxH, FORMAT=mp4|mkv).
@@ -9,7 +9,7 @@
 set -uo pipefail
 STATE="${XDG_RUNTIME_DIR:-/tmp}/casual-record"
 BAR="${XDG_RUNTIME_DIR:-/tmp}/aro-bar"
-OUT_DIR="$HOME/Movies/Casual"
+OUT_DIR="$HOME/Videos/Casual"
 CONF=/etc/dotfiles-aro.minimal.conf
 USERCONF="$HOME/.config/casual-record.conf"
 GPU="$( . "$CONF" 2>/dev/null; echo "${GPU:-}" )"
