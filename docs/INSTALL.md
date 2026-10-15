@@ -168,7 +168,7 @@ Tambahan dari repo ini:
 | `Super+b` | Bluetooth: scan, pair, connect (`bluetui`) — hanya kalau `ENABLE_BLUETOOTH="yes"` |
 | `Super+Shift+c` | Cheatsheet keybind aro + superfile (dibaca dari config aktif) |
 | `Super+Shift+s` | Screenshot: menu Window (default, Enter) / Region / Full screen → `~/Pictures/Screenshot` + clipboard |
-| `Super+Shift+r` | Mulai/stop rekam layar (resolusi aktif, audio desktop + mic, .mp4) → `~/Videos/Casual` |
+| `Super+Shift+r` | Mulai/stop rekam layar (resolusi aktif, audio desktop + mic, .mp4) → `~/Movies/Casual` |
 | Play/Pause · Next · Prev · Stop | tombol multimedia keyboard, atau `Super+P` · `Super+]` · `Super+[` · `Super+Shift+P` (Sung, Firefox, mpv lewat MPRIS) |
 | Volume naik · turun · mute | tombol multimedia keyboard, atau `Super+F12` · `Super+F11` · `Super+F10` (maks. 100%, notifikasi level) |
 | `Super+u` | Menu update: pilih satu item (lihat bagian 5a) |
@@ -200,7 +200,7 @@ Dari terminal: `monitor-mode apply 2560x1600@240` (tanpa menyimpan).
   (slurp), **Full screen** = monitor yang difokus. Hasil `.png` di
   `~/Pictures/Screenshot/` dan disalin ke clipboard.
 - **`Super+Shift+R`** → mulai rekam monitor yang difokus di **resolusi aktif**,
-  audio desktop + mikrofon digabung, `.mp4` di `~/Videos/Casual/`. Tekan lagi
+  audio desktop + mikrofon digabung, `.mp4` di `~/Movies/Casual/`. Tekan lagi
   untuk berhenti (file ditutup rapi). Encoder video mengikuti `GPU`: nvidia →
   `h264_nvenc`, amd/intel → `h264_vaapi`, lainnya `libx264`. FPS dari
   `RECORD_FPS` (default 60; monitor 240/300 Hz tidak direkam sepenuh itu).
