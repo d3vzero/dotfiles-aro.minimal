@@ -121,8 +121,15 @@ cmd_menu() {
     fi
 }
 
+mode_is() {          # mode_is OUTPUT WxH@R -> 0 kalau mode aktif sama (selisih refresh < 1 Hz)
+    local cur; cur="$(current_mode "$1")"
+    [ "${cur%@*}" = "${2%@*}" ] || return 1
+    awk -v a="${cur#*@}" -v b="${2#*@}" 'BEGIN { d = a - b; if (d < 0) d = -d; exit !(d < 1) }'
+}
+
 cmd_restore() {
-    local o i f m
+    local o i f m n ok log="$STATE/restore.log"
+    mkdir -p "$STATE"
     for i in $(seq 1 20); do              # wait until aro answers wlr-randr
         [ -n "$(outputs)" ] && break; sleep 0.5
     done
@@ -130,11 +137,25 @@ cmd_restore() {
     if [ -f "$STATE/mode" ]; then
         o="$(output_name)"; [ -n "$o" ] && mv -f "$STATE/mode" "$STATE/$o.mode"
     fi
+    # aro sets its own (preferred) mode while starting up and can overwrite a mode
+    # applied too early: apply, check after a moment, retry, and check once more later
+    sleep 2
     for f in "$STATE"/*.mode; do
         [ -f "$f" ] || continue
         o="$(basename "$f" .mode)"; m="$(cat "$f")"
         outputs | grep -qx "$o" || continue  # that monitor is not plugged in now
-        apply_mode "$o" "$m" || notify -u critical "Display" "$o: saved mode $m could not be applied"
+        ok=0
+        for n in 1 2 3 4 5; do
+            mode_is "$o" "$m" || apply_mode "$o" "$m" >/dev/null 2>&1
+            sleep 1.5
+            if mode_is "$o" "$m"; then
+                sleep 3                          # still there a little later?
+                if mode_is "$o" "$m"; then ok=1; break; fi
+            fi
+        done
+        printf '%s %s %s: %s (percobaan %s)\n' "$(date '+%F %T')" "$o" "$m" \
+            "$([ $ok = 1 ] && echo ok || echo GAGAL)" "$n" >> "$log"
+        [ $ok = 1 ] || notify -u critical "Display" "$o: saved mode $m could not be applied"
     done
 }
 
