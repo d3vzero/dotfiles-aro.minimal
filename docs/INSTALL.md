@@ -345,6 +345,11 @@ Artix tidak punya journald: tanpa ini log boot sebelumnya hilang saat reboot. De
   berhenti mendadak / kernel panic), masalah penting (level 0-3, NVIDIA Xid, OOM, hung
   task, suhu, I/O error), dan 20 baris terakhir sebelum berhenti.
 - Config syslog-ng asli disimpan sebagai `/etc/syslog-ng/syslog-ng.conf.orig`.
+- **`whyd`** ([whyd-init](https://github.com/d3vzero/whyd-init), fork whyd dengan
+  backend syslog; `WHYD="yes"`): daftar semua sesi beserta cara berakhirnya, masalah per
+  sesi, dan laporan Markdown (`whyd report`). Dibangun dari commit `WHYD_REF` ke
+  `/usr/local/bin/whyd`; naikkan `WHYD_REF` setelah ada commit baru di whyd-init, atau
+  `UPDATE_WHYD=1` untuk build ulang. Butuh grup `log` (Admin) atau sudo.
 
 ## 4i. ble.sh (`BLESH`)
 

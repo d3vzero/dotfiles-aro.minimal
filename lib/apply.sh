@@ -48,6 +48,8 @@ load_conf() {
     BLESH="${BLESH:-yes}"
     MIRROR_RANK="${MIRROR_RANK:-auto}"
     LOG_KEEP_DAYS="${LOG_KEEP_DAYS:-30}"
+    WHYD="${WHYD:-yes}"
+    WHYD_REF="${WHYD_REF:-ffcecd8}"
 
     case "$CPU" in amd|intel) ;; *) die "CPU='$CPU' tidak valid (amd | intel)" ;; esac
     case "$GPU" in amd|nvidia|intel|vm) ;; *) die "GPU='$GPU' tidak valid (amd | nvidia | intel | vm)" ;; esac
@@ -230,6 +232,7 @@ install_packages() {
     if [ "$ENABLE_SSH" = "yes" ]; then pkgs+=(openssh openssh-dinit); fi
     if [ "$ENABLE_BLUETOOTH" = "yes" ]; then pkgs+=(bluez bluez-utils bluez-dinit bluetui); fi
     if [ "$LOG_PERSIST" = "yes" ]; then pkgs+=(syslog-ng syslog-ng-dinit); fi
+    if [ "$LOG_PERSIST" = "yes" ] && [ "$WHYD" = "yes" ]; then pkgs+=(go); fi   # build whyd-init
     # driver NVIDIA yang sedang ditahan dan sudah terpasang tidak diminta lagi
     # (kalau diminta, pacman mencoba menaikkannya dan bentrok)
     if [ -n "${NVIDIA_HELD:-}" ]; then
@@ -293,6 +296,35 @@ install_blesh() {
         https://github.com/akinomyoga/ble.sh.git /opt/blesh-src
     make -s -C /opt/blesh-src install PREFIX=/usr/local
     echo "    ble.sh dipasang ke /usr/local/share/blesh ($(git -C /opt/blesh-src rev-parse --short HEAD))"
+}
+
+# whyd-init (fork whyd dengan backend syslog): membaca /var/log/aro dari LOG_PERSIST,
+# menjelaskan kenapa sesi sebelumnya berhenti (shut down / berhenti mendadak / kernel
+# panic) beserta masalahnya. Dibangun dari commit WHYD_REF ke /usr/local/bin/whyd;
+# dilewati kalau commit itu sudah terpasang (UPDATE_WHYD=1 memaksa build ulang).
+install_whyd() {
+    [ "$LOG_PERSIST" = "yes" ] && [ "$WHYD" = "yes" ] || return 0
+    local src=/opt/whyd-init-src stamp=/usr/local/share/whyd-init.ref
+    if [ -x /usr/local/bin/whyd ] && [ "$(cat "$stamp" 2>/dev/null)" = "$WHYD_REF" ] && [ "${UPDATE_WHYD:-0}" != "1" ]; then
+        echo "    whyd-init $WHYD_REF sudah ada -- skip (UPDATE_WHYD=1 untuk build ulang)"
+        return 0
+    fi
+    command -v go >/dev/null || { warn "go tidak terpasang -- whyd-init dilewati"; return 0; }
+    if [ ! -d "$src/.git" ]; then
+        rm -rf "$src"
+        git clone --quiet https://github.com/d3vzero/whyd-init "$src"
+    fi
+    git -C "$src" fetch --quiet origin
+    git -C "$src" checkout --quiet --force "$WHYD_REF"
+    # cache Go di /var/cache, bukan di /root
+    if (cd "$src" && GOMODCACHE=/var/cache/whyd-init/mod GOCACHE=/var/cache/whyd-init/build \
+            GOFLAGS=-mod=readonly go build -trimpath \
+            -ldflags "-s -w -X main.version=init-$WHYD_REF" -o /usr/local/bin/whyd ./cmd/whyd); then
+        mkdir -p "$(dirname "$stamp")"; echo "$WHYD_REF" > "$stamp"
+        echo "    whyd-init $WHYD_REF -> /usr/local/bin/whyd"
+    else
+        warn "build whyd-init gagal -- versi lama (kalau ada) tetap dipakai"
+    fi
 }
 
 install_superfile() {

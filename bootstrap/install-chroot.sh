@@ -67,6 +67,7 @@ step "[6/10] aro (build dari source) + superfile"
 build_aro
 install_superfile
 install_blesh
+install_whyd
 
 step "[7/10] File sistem + service dinit"
 install_system_files
