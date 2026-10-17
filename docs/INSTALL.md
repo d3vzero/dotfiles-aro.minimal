@@ -355,6 +355,19 @@ sintaks. Cache ble.sh di `~/.local/state/ble-cache` karena `~/.cache` tmpfs.
 Build ulang ke versi terbaru: `sudo UPDATE_BLESH=1 update.sh`. Biaya: tiap shell
 interaktif sekitar 15–30 MB lebih besar dan mulai sedikit lebih lambat.
 
+## 4j. Mirror (`MIRROR_RANK`)
+
+`aro-mirrors` mengukur mirror Artix (`world.db`) dan Arch (`extra.db`, hanya bagian
+negara di `MIRROR_COUNTRIES`), lalu menaruh hingga 5 mirror **tercepat dan up to date**
+di atas mirrorlist (daftar asli tetap di bawahnya; aslinya disimpan sebagai
+`<file>.aro-orig`). Up to date = paket terbaru di daftar mirror itu tidak lebih tua
+6 jam dari mirror tersegar **dan** file paketnya benar-benar ada (menolak mirror yang
+daftarnya baru tapi filenya belum, penyebab error 404 saat unduh).
+
+- `MIRROR_RANK="auto"` (default): `update.sh` hanya mengukur ulang kalau mirror pertama
+  lebih lambat dari 1 MB/s atau gagal. `yes`: setiap update. `no`: tidak pernah.
+- Manual: `sudo aro-mirrors` (ukur + tulis), `aro-mirrors --dry-run` (hanya lihat).
+
 ## 5. Admin & update
 
 Admin login di tty lain: `Ctrl+Alt+F2` → login `Admin`.

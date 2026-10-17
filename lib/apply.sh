@@ -46,6 +46,7 @@ load_conf() {
     PUBLIC_NETWORK_CONTROL="${PUBLIC_NETWORK_CONTROL:-no}"
     LOG_PERSIST="${LOG_PERSIST:-yes}"
     BLESH="${BLESH:-yes}"
+    MIRROR_RANK="${MIRROR_RANK:-auto}"
     LOG_KEEP_DAYS="${LOG_KEEP_DAYS:-30}"
 
     case "$CPU" in amd|intel) ;; *) die "CPU='$CPU' tidak valid (amd | intel)" ;; esac
@@ -171,8 +172,20 @@ nvidia_hold() {     # cetak paket yang ditahan (kosong = tidak ada); butuh db te
 }
 NVIDIA_HELD=""
 
+# Mirror tercepat & up to date di urutan teratas (core/sbin/aro-mirrors).
+# auto: hanya kalau mirror pertama lambat atau gagal -- biasanya 1-2 detik.
+rank_mirrors() {
+    case "$MIRROR_RANK" in
+        no)  return 0 ;;
+        yes) "$REPO_DIR/core/sbin/aro-mirrors" ;;
+        *)   "$REPO_DIR/core/sbin/aro-mirrors" --auto ;;
+    esac || warn "aro-mirrors gagal -- lanjut dengan mirrorlist yang ada"
+}
+
 enable_repos() {
+    rank_mirrors                      # mirrorlist Artix (mirrorlist-arch belum tentu ada)
     pacman -S --needed --noconfirm artix-archlinux-support
+    rank_mirrors                      # sekarang juga mirrorlist-arch
     # [extra] wajib: freecad & ttf-caladea hanya ada di sana
     if ! grep -q '^\[extra\]' /etc/pacman.conf; then
         printf '\n[extra]\nInclude = /etc/pacman.d/mirrorlist-arch\n' >> /etc/pacman.conf

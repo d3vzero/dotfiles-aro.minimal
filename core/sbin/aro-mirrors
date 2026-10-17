@@ -1,0 +1,85 @@
+#!/bin/bash
+# aro-mirrors -- urutkan mirror pacman: tercepat DAN up to date di atas.
+#   aro-mirrors           ukur + tulis (root), untuk mirrorlist Artix dan Arch
+#   aro-mirrors --auto    hanya kalau mirror pertama lambat (< MIRROR_MIN_SPEED) atau gagal
+#   aro-mirrors --dry-run ukur dan tampilkan, tidak menulis apa pun
+#
+# Per mirror: unduh daftar paket (Artix: world.db, Arch: extra.db) -> kecepatan.
+# Up to date: BUILDDATE terbaru di daftar itu tidak lebih tua 6 jam dari mirror
+# tersegar, DAN file paket terbaru di daftar itu benar-benar ada (HTTP 200) --
+# menolak mirror yang daftarnya baru tapi filenya belum ada (404 saat unduh).
+# Mirrorlist asli disimpan sekali sebagai <file>.aro-orig; tulisan berikutnya
+# selalu dibangun ulang dari situ (pilihan teratas + daftar asli sebagai cadangan).
+# Config mesin: MIRROR_RANK (auto|yes|no), MIRROR_COUNTRIES (bagian ## di
+# mirrorlist-arch, regex), MIRROR_TOP, MIRROR_MIN_SPEED (byte/detik).
+set -uo pipefail
+CONF=/etc/dotfiles-aro.minimal.conf
+[ -f "$CONF" ] && . "$CONF"
+COUNTRIES="${MIRROR_COUNTRIES:-Indonesia|Singapore|Malaysia|Japan|Hong Kong|Taiwan|Thailand|Vietnam}"
+TOP="${MIRROR_TOP:-5}"
+MIN="${MIRROR_MIN_SPEED:-1000000}"
+MODE="${1:-}"
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+
+url_of() { printf '%s' "$1" | sed "s#\$repo#$2#; s#\$arch#x86_64#"; }   # url_of SERVER REPO
+
+# measure SERVER REPO -> "speed builddate filename server" (satu baris), atau tidak ada
+measure() {
+    local s="$1" repo="$2" db sp
+    db="$TMP/$(printf '%s' "$s" | md5sum | cut -c1-12).db"
+    sp="$(curl -sS -f -m 10 -o "$db" -w '%{speed_download}' "$(url_of "$s" "$repo")/$repo.db" 2>/dev/null)" || return 0
+    bsdtar -xOf "$db" '*/desc' 2>/dev/null | awk -v sp="${sp%.*}" -v s="$s" '
+        /^%FILENAME%$/  { getline f; next }
+        /^%BUILDDATE%$/ { getline b; if (b + 0 > best) { best = b + 0; bf = f } }
+        END { if (best) printf "%s %s %s %s\n", sp, best, bf, s }'
+}
+export -f measure url_of; export TMP
+
+candidates() {   # candidates FILE [regex bagian]
+    awk -v sect="${2:-}" 'BEGIN { insec = (sect == "") }
+        /^##/ { insec = (sect == "" || $0 ~ sect); next }
+        insec && /^[# ]*Server *=/ { sub(/^[# ]*Server *= */, ""); print }' "$1" | sort -u
+}
+
+first_ok() {     # first_ok FILE REPO -> 0 kalau mirror aktif pertama cukup cepat
+    local s sp
+    s="$(awk '/^Server *=/ { sub(/^Server *= */, ""); print; exit }' "$1")"
+    [ -n "$s" ] || return 1
+    sp="$(curl -sS -f -m 10 -o /dev/null -w '%{speed_download}' "$(url_of "$s" "$2")/$2.db" 2>/dev/null)" || return 1
+    [ "${sp%.*}" -ge "$MIN" ]
+}
+
+rank_file() {    # rank_file FILE REPO [regex bagian]
+    local f="$1" repo="$2" sect="${3:-}" res best chosen=() n=0 sp bd fn s
+    [ -f "$f" ] || return 0
+    local orig="$f.aro-orig"
+    [ -f "$orig" ] || cp -a "$f" "$orig"
+    if [ "$MODE" = "--auto" ] && first_ok "$f" "$repo"; then
+        echo "    $f: mirror pertama sudah cepat -- tidak diubah"; return 0
+    fi
+    echo "    $f: mengukur mirror ($repo.db)..."
+    res="$(candidates "$orig" "$sect" | xargs -r -P 12 -d '\n' -I{} bash -c 'measure "$1" "$2"' _ {} "$repo" | sort -rn)"
+    if [ -z "$res" ] && [ -n "$sect" ]; then      # tidak ada bagian negara: ukur semua
+        res="$(candidates "$orig" | xargs -r -P 12 -d '\n' -I{} bash -c 'measure "$1" "$2"' _ {} "$repo" | sort -rn)"
+    fi
+    [ -n "$res" ] || { echo "!!  $f: tidak ada mirror yang menjawab -- tidak diubah"; return 0; }
+    best="$(awk '{ print $2 }' <<<"$res" | sort -n | tail -n1)"
+    while read -r sp bd fn s; do
+        (( sp >= MIN )) || continue
+        if (( bd < best - 21600 )); then echo "      tertinggal : $s"; continue; fi
+        if ! curl -sS -f -I -m 8 -o /dev/null "$(url_of "$s" "$repo")/$fn" 2>/dev/null; then
+            echo "      file hilang: $s ($fn)"; continue
+        fi
+        printf '      %5s KB/s  %s\n' "$((sp / 1024))" "$s"
+        chosen+=("$s"); n=$((n + 1)); (( n >= TOP )) && break
+    done <<<"$res"
+    (( ${#chosen[@]} )) || { echo "!!  $f: tidak ada mirror yang cepat dan up to date -- tidak diubah"; return 0; }
+    [ "$MODE" = "--dry-run" ] && return 0
+    { echo "# aro-mirrors $(date '+%F %T'): ${#chosen[@]} mirror tercepat & up to date; daftar asli di bawah"
+      printf 'Server = %s\n' "${chosen[@]}"; echo; cat "$orig"; } > "$f.new" && mv -f "$f.new" "$f"
+    echo "    $f: ditulis (${#chosen[@]} mirror di atas)"
+}
+
+[ "$MODE" = "--dry-run" ] || [ "$(id -u)" = 0 ] || { echo "jalankan sebagai root (atau --dry-run)" >&2; exit 1; }
+rank_file /etc/pacman.d/mirrorlist world
+rank_file /etc/pacman.d/mirrorlist-arch extra "## ($COUNTRIES)"
