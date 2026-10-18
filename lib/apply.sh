@@ -49,7 +49,7 @@ load_conf() {
     MIRROR_RANK="${MIRROR_RANK:-auto}"
     LOG_KEEP_DAYS="${LOG_KEEP_DAYS:-30}"
     WHYD="${WHYD:-yes}"
-    WHYD_REF="${WHYD_REF:-ffcecd8}"
+    WHYD_REF="${WHYD_REF:-783e5c0}"
 
     case "$CPU" in amd|intel) ;; *) die "CPU='$CPU' tidak valid (amd | intel)" ;; esac
     case "$GPU" in amd|nvidia|intel|vm) ;; *) die "GPU='$GPU' tidak valid (amd | nvidia | intel | vm)" ;; esac
