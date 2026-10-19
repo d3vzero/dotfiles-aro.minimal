@@ -49,13 +49,21 @@ else
 fi
 
 # --- OpenCode ----------------------------------------------------------------
+# opencode-ai di npm hanya pembungkus: binary aslinya dipasang oleh postinstall.mjs,
+# yang tidak selalu dijalankan npm saat dipanggil sebagai root -> jalankan sendiri,
+# lalu pastikan opencode --version benar-benar menjawab versi yang diminta.
 have="$(opencode --version 2>/dev/null || true)"
 if [ "$have" = "$OPENCODE_VERSION" ]; then
     echo "    OpenCode $OPENCODE_VERSION sudah ada -- skip"
-elif npm install -g --prefix /usr/local "opencode-ai@$OPENCODE_VERSION" >/dev/null 2>&1; then
-    echo "    OpenCode $OPENCODE_VERSION -> /usr/local/bin/opencode"
 else
-    echo "    !! pemasangan OpenCode $OPENCODE_VERSION gagal (npm) -- lewati"
+    pkg=/usr/local/lib/node_modules/opencode-ai
+    if npm install -g --prefix /usr/local "opencode-ai@$OPENCODE_VERSION" > /tmp/opencode-npm.log 2>&1 &&
+       (cd "$pkg" && node postinstall.mjs) >> /tmp/opencode-npm.log 2>&1 &&
+       [ "$(opencode --version 2>/dev/null)" = "$OPENCODE_VERSION" ]; then
+        echo "    OpenCode $OPENCODE_VERSION -> /usr/local/bin/opencode"
+    else
+        echo "    !! pemasangan OpenCode $OPENCODE_VERSION gagal -- lihat /tmp/opencode-npm.log"
+    fi
 fi
 
 # config OpenCode akun umum: llama-server lokal, minta izin sebelum edit/perintah.
