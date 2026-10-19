@@ -81,10 +81,13 @@ dibiarkan belum di-commit untuk diperiksa. Di akhir, tulis ringkasan singkat:
 file yang diubah, perintah test yang dijalankan beserta hasilnya, dan hal yang
 belum selesai atau perlu diperhatikan pemeriksa."
 
+# stdin dari /dev/null: dari tool Bash (Claude Code) stdin adalah pipe yang tidak
+# pernah ditutup, dan opencode run membaca stdin non-terminal sebagai bagian pesan
+# -> menunggu selamanya tanpa pernah menghubungi model.
 echo "qwen-task: branch $cur, log $log (batas ${timeout}s)" >&2
 start=$(date +%s)
 OPENCODE_CONFIG_CONTENT="$policy" timeout "$timeout" \
-    opencode run --model llama.cpp/local "$task$footer" 2>&1 | tee "$log"
+    opencode run --model llama.cpp/local "$task$footer" < /dev/null 2>&1 | tee "$log"
 rc=${PIPESTATUS[0]}
 dur=$(( $(date +%s) - start ))
 
