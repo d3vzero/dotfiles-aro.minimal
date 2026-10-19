@@ -35,3 +35,13 @@ mic_text() {
     if [ "$d" != "$_AUDIO_SRC" ]; then _AUDIO_SRC="$d"; _AUDIO_SRC_DESC="$(_audio_desc sources "$d")"; fi
     _audio_text MIC @DEFAULT_AUDIO_SOURCE@ "$_AUDIO_SRC_DESC"
 }
+
+llm_text() {      # segmen LLM (profil ai, bagian llm): kosong kalau llm tidak terpasang
+    command -v llm >/dev/null || return 1
+    local r="${XDG_RUNTIME_DIR:-/tmp}/llm" pid
+    if [ -r "$r/pid" ] && read -r pid < "$r/pid" && kill -0 "$pid" 2>/dev/null; then
+        echo "LLM $(cut -c1-18 "$r/model" 2>/dev/null)"
+    else
+        echo "~LLM"
+    fi
+}

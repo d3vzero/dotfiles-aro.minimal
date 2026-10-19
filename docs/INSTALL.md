@@ -483,6 +483,37 @@ Risiko: update Python sistem (minor naik) bisa merusak venv Sung —
 - `Super+Alt+S`: `split-obs-record` memecah `~/Videos/OBS/RAW/RecordRAW.mkv`
   (track 1 campuran, 2 desktop, 3 mic) ke `~/Videos/OBS/Split/{All,Screen,Audio,Mic}`.
 
+## 6a0. Profil ai: dua bagian (`AI_PARTS`)
+
+Profil `ai` punya dua bagian yang dipilih di config mesin, masing-masing dengan file
+config sendiri di `/etc/dotfiles-aro.minimal.d/` (dibuat sekali dari template di
+`profiles/ai/`, tidak ditimpa `update.sh`):
+
+| `AI_PARTS` | Isi | Config |
+|---|---|---|
+| `trainer` | train-run + Detectron2 (bagian 6a) | `ai-trainer.conf` (`AI_BACKEND`, `TORCH_CUDA_ARCH`, `D2_REV`, `TORCH_INDEX`; saat dibuat diisi dari nilai lama di config mesin) |
+| `llm` | llama.cpp (CUDA) + `llm` + OpenCode + `gh` | `ai-llm.conf` (`LLAMA_REF`, `LLAMA_CUDA_ARCH`, `OPENCODE_VERSION`, `LLM_VRAM_MB`, `LLM_CTX`, `LLM_PORT`, `LLM_MODEL`) |
+
+`AI_PARTS="trainer llm"` memasang keduanya. Bagian **llm**:
+
+- llama.cpp dibangun dari `LLAMA_REF` ke `/usr/local/bin/llama-server` (+ `llama-cli`,
+  `llama-bench`); dilewati kalau sudah sama (`UPDATE_LLAMA=1` memaksa).
+- **Model diunduh manual** ke `~/models` (file `.gguf`), mis. Qwen3.6-35B-A3B Q4.
+- `llm start [model]` / `llm stop` / `llm status` / `llm models` / `llm log`. Server di
+  `127.0.0.1:LLM_PORT` (API OpenAI). `--fit` mengisi GPU sampai `LLM_VRAM_MB` (default
+  14000), sisanya (expert MoE) di RAM; KV cache q8_0; `--jinja` untuk tool calling.
+- **Tidak bersamaan dengan training**: `llm start` menolak saat ada job `train-run`, dan
+  `train-run start` menolak saat LLM berjalan (`TRAIN_FORCE=1` untuk memaksa).
+- Segmen bar bawah **LLM** (kiri, setelah SPK): redup = mati, terang = nama model; klik =
+  start/stop.
+- **OpenCode** (`opencode`): agent coding di terminal, config
+  `~/.config/opencode/opencode.json` dari `profiles/ai/opencode.json` (ditimpa tiap
+  update) -- model `llama.cpp/local`, minta izin sebelum mengedit file, menjalankan
+  perintah, atau membuka web.
+- **GitHub**: `gh auth login` di akun umum dengan *fine-grained token* (hanya repo yang
+  dikerjakan agent, Contents + Pull requests, ada masa berlaku); kerja di branch, gabung
+  lewat pull request; aktifkan branch protection di `main`.
+
 ## 6a. Profil ai: Detectron2 + train-run
 
 Hanya untuk **GPU NVIDIA** (`AI_BACKEND=auto` → cuda). Di mesin lain

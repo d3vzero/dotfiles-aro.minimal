@@ -1,5 +1,5 @@
-# ai -- Detectron2 (training) di NVIDIA. Paket `cuda` (beberapa GB) dipasang
-# setup.sh hanya kalau backend = cuda. Python + torch lewat uv (install-detectron2.sh).
+# ai -- paket bersama bagian trainer & llm (AI_PARTS). Paket `cuda` (beberapa GB),
+# nodejs/npm dan github-cli dipasang setup-*.sh hanya untuk bagian yang dipakai. Python + torch lewat uv (install-detectron2.sh).
 base-devel
 git
 cmake

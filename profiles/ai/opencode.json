@@ -1,0 +1,17 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "llama.cpp": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "llama-server (lokal)",
+      "options": { "baseURL": "http://127.0.0.1:@PORT@/v1" },
+      "models": { "local": { "name": "model lokal (llm start)" } }
+    }
+  },
+  "model": "llama.cpp/local",
+  "permission": {
+    "edit": "ask",
+    "bash": "ask",
+    "webfetch": "ask"
+  }
+}

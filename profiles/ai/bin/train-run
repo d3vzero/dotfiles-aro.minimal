@@ -13,6 +13,13 @@ start)
     name=${2:?nama job}; shift 2; [ $# -gt 0 ] || { echo "perintah kosong"; exit 1; }
     d="$BASE/$name"; mkdir -p "$d"
     alive "$d" && { echo "job '$name' masih berjalan"; exit 1; }
+    # LLM lokal (llm) memakai VRAM yang sama: jangan jalan bersamaan
+    lp="${XDG_RUNTIME_DIR:-/tmp}/llm/pid"
+    if [ -r "$lp" ] && kill -0 "$(cat "$lp")" 2>/dev/null && [ "${TRAIN_FORCE:-0}" != 1 ]; then
+        echo "!! LLM lokal sedang berjalan ($(cat "${lp%/pid}/model" 2>/dev/null)) dan memakai VRAM."
+        echo "   Hentikan dulu: llm stop   (atau TRAIN_FORCE=1 train-run start ... untuk tetap mulai)"
+        exit 1
+    fi
     printf '%q ' "$@" > "$d/cmd"; date '+%F %T' > "$d/start"; rm -f "$d/exit"
     setsid bash -c '
         d=$1; shift

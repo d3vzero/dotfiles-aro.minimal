@@ -1,0 +1,110 @@
+#!/bin/bash
+# llm -- model lokal lewat llama-server (profil ai, bagian llm)
+#   llm start [MODEL]   jalankan; MODEL = file .gguf (nama di ~/models atau path).
+#                       Default: LLM_MODEL di config, atau .gguf terbaru di ~/models
+#   llm stop            hentikan
+#   llm toggle          start / stop (klik segmen LLM di bar bawah)
+#   llm status          model, VRAM, alamat API
+#   llm models          daftar model di ~/models
+#   llm log             ikuti log llama-server (Ctrl+C hanya berhenti melihat)
+# VRAM: llama-server --fit menaruh sebanyak mungkin di GPU sampai LLM_VRAM_MB;
+# sisanya (expert MoE) di RAM. Tidak berjalan bersamaan dengan train-run (VRAM).
+# Config: /etc/dotfiles-aro.minimal.d/ai-llm.conf
+set -uo pipefail
+CONF=/etc/dotfiles-aro.minimal.d/ai-llm.conf
+LLM_VRAM_MB=14000 LLM_CTX=32768 LLM_PORT=8080 LLM_MODEL=""
+# shellcheck disable=SC1090
+[ -f "$CONF" ] && . "$CONF"
+MODELS="$HOME/models"
+RUN="${XDG_RUNTIME_DIR:-/tmp}/llm"
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/llm"
+mkdir -p "$RUN" "$STATE"
+API="http://127.0.0.1:$LLM_PORT"
+
+notify()  { notify-send -a LLM "$@" 2>/dev/null || true; }
+running() { [ -f "$RUN/pid" ] && kill -0 "$(cat "$RUN/pid")" 2>/dev/null; }
+bar()     { aro-bar-refresh llm 2>/dev/null || true; }
+vram_of() {   # MiB dipakai proses $1 di GPU
+    nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader,nounits 2>/dev/null |
+        awk -F', *' -v p="$1" '$1 == p { print $2 }'
+}
+training() {  # ada job train-run yang berjalan?
+    command -v train-run >/dev/null || return 1
+    [ "$(train-run count 2>/dev/null || echo 0)" -gt 0 ]
+}
+model_file() {
+    local m="${1:-$LLM_MODEL}"
+    if [ -z "$m" ]; then
+        # yang terbaru, kecuali mmproj (proyektor vision, bukan model)
+        ls -t "$MODELS"/*.gguf 2>/dev/null | grep -vi 'mmproj' | head -n1; return
+    fi
+    case "$m" in */*) echo "$m" ;; *) echo "$MODELS/${m%.gguf}.gguf" ;; esac
+}
+
+start() {
+    if running; then echo "llm sudah berjalan: $(cat "$RUN/model")"; return 0; fi
+    if training; then
+        echo "!! ada training yang berjalan (train-run status) -- VRAM dipakai training. Hentikan dulu."
+        notify -u critical "LLM tidak dijalankan" "Training sedang berjalan (train-run)"; return 1
+    fi
+    local f name free margin
+    f="$(model_file "${1:-}")"
+    if [ -z "$f" ] || [ ! -f "$f" ]; then
+        echo "!! model tidak ditemukan${f:+: $f}. Unduh file .gguf ke $MODELS (llm models)."
+        notify -u critical "LLM: model tidak ditemukan" "$MODELS"; return 1
+    fi
+    name="$(basename "$f" .gguf)"
+    free="$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2>/dev/null | head -n1)"
+    margin=$(( ${free:-16000} - LLM_VRAM_MB )); (( margin < 512 )) && margin=512
+    echo "llm: $name  (VRAM bebas ${free:-?} MiB, target $LLM_VRAM_MB MiB, context $LLM_CTX)"
+    setsid llama-server -m "$f" --alias "$name" --host 127.0.0.1 --port "$LLM_PORT" \
+        -c "$LLM_CTX" --jinja -fa on -ctk q8_0 -ctv q8_0 --fit on --fit-target "$margin" \
+        > "$STATE/server.log" 2>&1 < /dev/null &
+    echo $! > "$RUN/pid"; echo "$name" > "$RUN/model"; date +%s > "$RUN/start"
+    bar
+    local i
+    for i in $(seq 1 300); do              # model besar dari disk: bisa 1-2 menit
+        if ! running; then
+            echo "!! llama-server berhenti saat memuat model. Akhir log ($STATE/server.log):"
+            tail -n 15 "$STATE/server.log"; rm -f "$RUN/pid" "$RUN/model"; bar
+            notify -u critical "LLM gagal start" "$name -- llm log"; return 1
+        fi
+        curl -sf "$API/health" >/dev/null 2>&1 && break
+        sleep 1
+    done
+    echo "siap: $API/v1  (VRAM $(vram_of "$(cat "$RUN/pid")") MiB) -- OpenCode: opencode"
+    notify "LLM siap" "$name -- $(vram_of "$(cat "$RUN/pid")") MiB VRAM"
+    bar
+}
+
+stop() {
+    if ! running; then echo "llm tidak berjalan"; rm -f "$RUN/pid" "$RUN/model"; bar; return 0; fi
+    local pid; pid="$(cat "$RUN/pid")"
+    kill -TERM "$pid" 2>/dev/null
+    for _ in $(seq 1 15); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+    kill -KILL "$pid" 2>/dev/null
+    rm -f "$RUN/pid" "$RUN/model" "$RUN/start"
+    echo "llm dihentikan"; notify "LLM dihentikan" ""; bar
+}
+
+status() {
+    if running; then
+        local pid up; pid="$(cat "$RUN/pid")"; up=$(( $(date +%s) - $(cat "$RUN/start" 2>/dev/null || date +%s) ))
+        echo "berjalan : $(cat "$RUN/model")"
+        echo "sejak    : $((up / 60)) menit"
+        echo "VRAM     : $(vram_of "$pid") MiB (target $LLM_VRAM_MB)"
+        echo "API      : $API/v1"
+    else
+        echo "tidak berjalan (llm start)"
+    fi
+}
+
+case "${1:-}" in
+    start)  shift; start "${1:-}" ;;
+    stop)   stop ;;
+    toggle) if running; then stop; else start; fi ;;
+    status) status ;;
+    models) ls -lhS "$MODELS"/*.gguf 2>/dev/null | awk '{ print $5, $NF }' || echo "(kosong: $MODELS)" ;;
+    log)    tail -n 50 -f "$STATE/server.log" ;;
+    *)      sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac

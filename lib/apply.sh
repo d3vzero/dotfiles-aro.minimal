@@ -23,6 +23,15 @@ load_conf() {
     [ -f "$1" ] || die "Config $1 tidak ada."
     # shellcheck disable=SC1090
     . "$1"
+    # config per bagian (profil ai: ai-trainer.conf, ai-llm.conf) di <config>.d/,
+    # dimuat setelah config mesin: nilainya menang atas baris lama di config mesin
+    CONF_D="${1%.conf}.d"
+    local f
+    for f in "$CONF_D"/*.conf; do
+        # shellcheck disable=SC1090
+        [ -f "$f" ] && . "$f"
+    done
+    AI_PARTS="${AI_PARTS:-trainer}"           # profil ai: trainer | llm | "trainer llm"
     PUBLIC_HOME="/home/$PUBLIC_USER"
     SUNG_REV="${SUNG_REV:-4918f76}"
 
@@ -62,7 +71,7 @@ load_conf() {
 
     AI_BACKEND_RESOLVED="$(resolve_ai_backend)"
     export REPO_DIR PUBLIC_USER PUBLIC_HOME ADMIN_USER SUNG_REV CPU GPU GPU_GEN \
-           AI_BACKEND_RESOLVED D2_REV TORCH_CUDA_ARCH TORCH_INDEX
+           AI_BACKEND_RESOLVED D2_REV TORCH_CUDA_ARCH TORCH_INDEX CONF_D AI_PARTS AI_BACKEND
 }
 
 has_profile() { [[ " $PROFILES " == *" $1 "* ]]; }

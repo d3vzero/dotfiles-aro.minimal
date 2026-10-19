@@ -24,7 +24,7 @@ mkdir -p "$DIR"
 exec 9>"$DIR/.lock"
 flock -n 9 || exit 0                      # satu instance saja
 
-cleanup() { [ -n "${GPUPID:-}" ] && kill "$GPUPID" 2>/dev/null; rm -f "$DIR"/sysmon "$DIR"/net "$DIR"/bt "$DIR"/usb "$DIR"/display "$DIR"/rec "$DIR"/recset "$DIR"/spk "$DIR"/mic "$GPUF"; }
+cleanup() { [ -n "${GPUPID:-}" ] && kill "$GPUPID" 2>/dev/null; rm -f "$DIR"/sysmon "$DIR"/net "$DIR"/bt "$DIR"/usb "$DIR"/display "$DIR"/rec "$DIR"/recset "$DIR"/spk "$DIR"/mic "$DIR"/llm "$GPUF"; }
 trap cleanup EXIT
 trap 'exit 0' TERM INT
 
@@ -170,6 +170,7 @@ while [ -S "$RUN/${WAYLAND_DISPLAY:-wayland-0}" ]; do   # berhenti saat sesi aro
     put rec "$(rec_text)"
     put spk "$(spk_text)"
     put mic "$(mic_text)"
+    if LLM_T="$(llm_text)"; then put llm "$LLM_T"; else rm -f "$DIR/llm"; fi
     put recset "$(recset_text)"
 
     (( n % 5 == 0 )) && { DISP="$(disp_text)" || DISP=""; }   # tiap 10 detik (monitor baru ikut)
