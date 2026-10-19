@@ -510,6 +510,16 @@ config sendiri di `/etc/dotfiles-aro.minimal.d/` (dibuat sekali dari template di
   `~/.config/opencode/opencode.json` dari `profiles/ai/opencode.json` (ditimpa tiap
   update) -- model `llama.cpp/local`, minta izin sebelum mengedit file, menjalankan
   perintah, atau membuka web.
+- **Claude Code + `qwen-task`** (`CLAUDE_CODE="yes"` di `ai-llm.conf`): Claude Code dipasang
+  per-user dengan installer resmi (`~/.local/bin/claude`, kanal stable, update otomatis);
+  login sekali dengan `claude`. `~/.claude/CLAUDE.md` (alur: Claude merencanakan dan
+  memeriksa, model lokal menulis kode) dan `~/.claude/settings.json` (izin: `qwen-task`,
+  `git status/diff/log`, test; larangan: `gh pr merge`, push ke main, `sudo`) dipasang
+  sekali dari `profiles/ai/claude/`, lalu milik user. `qwen-task [-b BRANCH] "TUGAS"`:
+  OpenCode tanpa interaksi dengan model lokal (boleh edit dan menjalankan perintah;
+  dilarang commit/push/ganti branch/gh/sudo/unduh), menolak bekerja di main, mulai dari
+  working tree bersih, hasil dibiarkan belum di-commit untuk diperiksa, log di
+  `.git/qwen-task/`.
 - **GitHub**: `gh auth login` di akun umum dengan *fine-grained token* (hanya repo yang
   dikerjakan agent, Contents + Pull requests, ada masa berlaku); kerja di branch, gabung
   lewat pull request; aktifkan branch protection di `main`.

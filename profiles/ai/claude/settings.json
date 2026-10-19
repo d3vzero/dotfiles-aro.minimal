@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(qwen-task *)",
+      "Bash(llm status)",
+      "Bash(llm start)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(bash test.sh*)"
+    ],
+    "deny": [
+      "Bash(gh pr merge*)",
+      "Bash(git push origin main*)",
+      "Bash(git push origin master*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(sudo *)",
+      "Bash(train-run stop*)",
+      "Bash(llm stop*)"
+    ]
+  }
+}

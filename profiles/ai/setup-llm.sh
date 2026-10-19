@@ -8,7 +8,7 @@ set -euo pipefail
 . "$CONF_D/ai-llm.conf"
 PUB="$PUBLIC_USER"; H="$PUBLIC_HOME"
 
-install -m755 "$PDIR/bin/llm" /usr/local/bin/llm
+install -m755 "$PDIR/bin/llm" "$PDIR/bin/qwen-task" /usr/local/bin/
 install -d -o "$PUB" -g "$PUB" "$H/models"
 
 if [ "$GPU" != nvidia ]; then
@@ -72,3 +72,24 @@ install -d -o "$PUB" -g "$PUB" "$H/.config" "$H/.config/opencode"
 sed "s/@PORT@/$LLM_PORT/g" "$PDIR/opencode.json" > "$H/.config/opencode/opencode.json"
 chown "$PUB:$PUB" "$H/.config/opencode/opencode.json"
 echo "    config OpenCode: $H/.config/opencode/opencode.json (model: llama-server :$LLM_PORT)"
+
+# --- Claude Code (perencana + pemeriksa; qwen-task menyerahkan penulisan ke model lokal)
+# Installer resmi per-user (~/.local/bin/claude, update otomatis, kanal stable).
+# CLAUDE.md dan settings.json hanya dipasang kalau belum ada: setelah itu milik user.
+if [ "${CLAUDE_CODE:-yes}" = yes ]; then
+    if [ -x "$H/.local/bin/claude" ]; then
+        echo "    Claude Code sudah ada ($(runuser -u "$PUB" -- "$H/.local/bin/claude" --version 2>/dev/null | head -n1)) -- update otomatis"
+    elif runuser -u "$PUB" -- env HOME="$H" bash -c 'curl -fsSL https://claude.ai/install.sh | bash -s stable' > /tmp/claude-install.log 2>&1 &&
+         [ -x "$H/.local/bin/claude" ]; then
+        echo "    Claude Code -> $H/.local/bin/claude (login sekali: jalankan claude)"
+    else
+        echo "    !! pemasangan Claude Code gagal -- lihat /tmp/claude-install.log"
+    fi
+    install -d -o "$PUB" -g "$PUB" "$H/.claude"
+    for f in CLAUDE.md settings.json; do
+        if [ ! -e "$H/.claude/$f" ]; then
+            install -m644 -o "$PUB" -g "$PUB" "$PDIR/claude/$f" "$H/.claude/$f"
+            echo "    $H/.claude/$f dipasang (tidak ditimpa update berikutnya)"
+        fi
+    done
+fi

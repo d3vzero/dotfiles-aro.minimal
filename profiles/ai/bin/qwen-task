@@ -1,0 +1,96 @@
+#!/bin/bash
+# qwen-task -- serahkan satu tugas coding ke model lokal (OpenCode + llama-server),
+# tanpa interaksi. Dipakai oleh Claude Code (perencana + pemeriksa), atau manual.
+#
+#   qwen-task [-b BRANCH] [-t DETIK] "TUGAS"
+#   qwen-task [-b BRANCH] -f FILE            (tugas dari file; "-" = stdin)
+#
+#   -b BRANCH  kerjakan di branch ini (dibuat dari HEAD kalau belum ada)
+#   -t DETIK   batas waktu (default QWEN_TIMEOUT atau 1800)
+#
+# Model lokal boleh mengedit file dan menjalankan perintah di repo, TIDAK boleh:
+# commit, push, ganti/hapus branch, reset, gh, sudo, unduh dari internet. Hasilnya
+# dibiarkan sebagai perubahan belum di-commit; pemeriksa (Claude Code atau kamu)
+# membaca git diff, menjalankan test, lalu commit sendiri atau memberi koreksi
+# dengan qwen-task lagi. Log tiap run: .git/qwen-task/<waktu>.log (tidak ikut commit).
+set -uo pipefail
+branch="" timeout="${QWEN_TIMEOUT:-1800}" file=""
+while getopts "b:t:f:h" o; do
+    case $o in
+        b) branch="$OPTARG" ;;
+        t) timeout="$OPTARG" ;;
+        f) file="$OPTARG" ;;
+        *) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+    esac
+done
+shift $((OPTIND - 1))
+if [ -n "$file" ]; then
+    if [ "$file" = - ]; then task="$(cat)"; else task="$(cat "$file")" || exit 2; fi
+else
+    task="${*:-}"
+fi
+[ -n "$task" ] || { echo "qwen-task: tugas kosong (qwen-task -h)" >&2; exit 2; }
+
+top="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "qwen-task: bukan di dalam repo git" >&2; exit 2; }
+cd "$top" || exit 2
+command -v opencode >/dev/null || { echo "qwen-task: opencode tidak terpasang" >&2; exit 2; }
+
+# model lokal harus berjalan
+if ! llm status >/dev/null 2>&1 || ! llm status | grep -q '^berjalan'; then
+    echo "qwen-task: LLM belum berjalan, menjalankan llm start..." >&2
+    llm start >&2 || { echo "qwen-task: llm start gagal" >&2; exit 3; }
+fi
+
+# mulai dari kondisi bersih, supaya diff = hasil kerja model saja
+if [ -n "$(git status --porcelain)" ]; then
+    echo "qwen-task: ada perubahan yang belum di-commit -- commit atau stash dulu:" >&2
+    git status --short >&2; exit 4
+fi
+if [ -n "$branch" ] && [ "$(git branch --show-current)" != "$branch" ]; then
+    if git show-ref --verify --quiet "refs/heads/$branch"; then git checkout -q "$branch"
+    else git checkout -q -b "$branch"; fi || exit 4
+fi
+cur="$(git branch --show-current)"
+case "$cur" in main|master) echo "qwen-task: menolak bekerja langsung di '$cur' -- pakai -b BRANCH" >&2; exit 4 ;; esac
+
+logdir="$(git rev-parse --git-dir)/qwen-task"; mkdir -p "$logdir"
+log="$logdir/$(date +%Y%m%d-%H%M%S).log"
+
+# izin model lokal: tanpa pertanyaan (tidak ada yang menjawab), larangan eksplisit
+policy='{
+  "permission": {
+    "edit": "allow",
+    "webfetch": "deny",
+    "external_directory": "allow",
+    "bash": {
+      "*": "allow",
+      "git commit*": "deny", "git push*": "deny", "git checkout*": "deny",
+      "git switch*": "deny", "git branch*": "deny", "git reset*": "deny",
+      "git rebase*": "deny", "git merge*": "deny", "git stash*": "deny",
+      "git clean*": "deny", "git remote*": "deny", "gh *": "deny",
+      "sudo *": "deny", "su *": "deny", "curl *": "deny", "wget *": "deny",
+      "ssh *": "deny", "scp *": "deny", "rm -rf /*": "deny", "rm -rf ~*": "deny"
+    }
+  }
+}'
+footer="
+
+Aturan kerja: kerjakan HANYA tugas di atas, di repo ini. Jalankan test yang relevan
+sampai lolos. JANGAN commit, push, membuat atau mengganti branch -- perubahan
+dibiarkan belum di-commit untuk diperiksa. Di akhir, tulis ringkasan singkat:
+file yang diubah, perintah test yang dijalankan beserta hasilnya, dan hal yang
+belum selesai atau perlu diperhatikan pemeriksa."
+
+echo "qwen-task: branch $cur, log $log (batas ${timeout}s)" >&2
+start=$(date +%s)
+OPENCODE_CONFIG_CONTENT="$policy" timeout "$timeout" \
+    opencode run --model llama.cpp/local "$task$footer" 2>&1 | tee "$log"
+rc=${PIPESTATUS[0]}
+dur=$(( $(date +%s) - start ))
+
+echo
+echo "=== qwen-task selesai: exit $rc, ${dur}s$([ "$rc" = 124 ] && echo ' (BATAS WAKTU)') ==="
+echo "--- perubahan (belum di-commit, branch $cur):"
+git status --short
+git --no-pager diff --stat
+exit "$rc"
