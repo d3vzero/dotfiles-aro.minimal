@@ -86,10 +86,23 @@ if [ "${CLAUDE_CODE:-yes}" = yes ]; then
         echo "    !! pemasangan Claude Code gagal -- lihat /tmp/claude-install.log"
     fi
     install -d -o "$PUB" -g "$PUB" "$H/.claude"
-    for f in CLAUDE.md settings.json; do
-        if [ ! -e "$H/.claude/$f" ]; then
-            install -m644 -o "$PUB" -g "$PUB" "$PDIR/claude/$f" "$H/.claude/$f"
-            echo "    $H/.claude/$f dipasang (tidak ditimpa update berikutnya)"
-        fi
-    done
+    if [ ! -e "$H/.claude/CLAUDE.md" ]; then
+        install -m644 -o "$PUB" -g "$PUB" "$PDIR/claude/CLAUDE.md" "$H/.claude/CLAUDE.md"
+        echo "    $H/.claude/CLAUDE.md dipasang (tidak ditimpa update berikutnya)"
+    fi
+    # settings.json: installer Claude Code membuatnya sendiri (autoUpdatesChannel) ->
+    # GABUNGKAN izin dari repo ke isi yang ada; aturan buatan user tetap dipertahankan
+    sj="$H/.claude/settings.json"
+    if [ ! -s "$sj" ]; then
+        install -m644 -o "$PUB" -g "$PUB" "$PDIR/claude/settings.json" "$sj"
+        echo "    $sj dipasang"
+    elif jq -s '.[0] * {permissions: {
+                 allow: ((.[0].permissions.allow // []) + .[1].permissions.allow | unique),
+                 deny:  ((.[0].permissions.deny  // []) + .[1].permissions.deny  | unique)}}' \
+             "$sj" "$PDIR/claude/settings.json" > "$sj.new" 2>/dev/null; then
+        if cmp -s "$sj" "$sj.new"; then rm -f "$sj.new"
+        else mv -f "$sj.new" "$sj"; chown "$PUB:$PUB" "$sj"; echo "    izin dari repo digabung ke $sj"; fi
+    else
+        rm -f "$sj.new"; echo "    !! $sj tidak bisa dibaca sebagai JSON -- izin dari repo tidak digabung"
+    fi
 fi
