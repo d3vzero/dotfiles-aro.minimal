@@ -373,6 +373,18 @@ daftarnya baru tapi filenya belum, penyebab error 404 saat unduh).
   lebih lambat dari 1 MB/s atau gagal. `yes`: setiap update. `no`: tidak pernah.
 - Manual: `sudo aro-mirrors` (ukur + tulis), `aro-mirrors --dry-run` (hanya lihat).
 
+## 4k. Live wallpaper (`LIVEPAPER`)
+
+`LIVEPAPER="yes"`: [qamariah-livepaper](https://github.com/d3vzero/qamariah-livepaper) --
+langit hitam dengan matahari, bulan (fase sebenarnya), bintang dan planet pada posisi
+nyata, cuaca live (Open-Meteo), dan laut bergelombang; garis putih tipis, >95% piksel
+hitam, anti burn-in. Dipasang dari commit `LIVEPAPER_REF` ke `/usr/local`, dijalankan
+lewat `exec = qamariah-livepaper` di config aro (layer background). Animasi berhenti
+sendiri saat tertutup jendela (CPU ~0%); saat terlihat ~14% satu core di 2560x1600/12 FPS.
+Config: `~/.config/qamariah-livepaper/config.ini` (dibuat sekali; `lat`/`lon` = lokasi
+pengamat). Sisa nama lama `aro-livepaper` dibersihkan otomatis. `UPDATE_LIVEPAPER=1`
+memasang ulang.
+
 ## 5. Admin & update
 
 Admin login di tty lain: `Ctrl+Alt+F2` → login `Admin`.

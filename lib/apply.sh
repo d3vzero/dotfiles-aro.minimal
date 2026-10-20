@@ -59,6 +59,8 @@ load_conf() {
     LOG_KEEP_DAYS="${LOG_KEEP_DAYS:-30}"
     WHYD="${WHYD:-yes}"
     WHYD_REF="${WHYD_REF:-783e5c0}"
+    LIVEPAPER="${LIVEPAPER:-no}"
+    LIVEPAPER_REF="${LIVEPAPER_REF:-f7e3180}"
 
     case "$CPU" in amd|intel) ;; *) die "CPU='$CPU' tidak valid (amd | intel)" ;; esac
     case "$GPU" in amd|nvidia|intel|vm) ;; *) die "GPU='$GPU' tidak valid (amd | nvidia | intel | vm)" ;; esac
@@ -242,6 +244,7 @@ install_packages() {
     if [ "$ENABLE_BLUETOOTH" = "yes" ]; then pkgs+=(bluez bluez-utils bluez-dinit bluetui); fi
     if [ "$LOG_PERSIST" = "yes" ]; then pkgs+=(syslog-ng syslog-ng-dinit); fi
     if [ "$LOG_PERSIST" = "yes" ] && [ "$WHYD" = "yes" ]; then pkgs+=(go); fi   # build whyd-init
+    if [ "$LIVEPAPER" = "yes" ]; then pkgs+=(gtk4 gtk4-layer-shell python-gobject python-cairo); fi
     # driver NVIDIA yang sedang ditahan dan sudah terpasang tidak diminta lagi
     # (kalau diminta, pacman mencoba menaikkannya dan bentrok)
     if [ -n "${NVIDIA_HELD:-}" ]; then
@@ -334,6 +337,34 @@ install_whyd() {
     else
         warn "build whyd-init gagal -- versi lama (kalau ada) tetap dipakai"
     fi
+}
+
+# qamariah-livepaper (LIVEPAPER=yes): live wallpaper di layer background aro, dari
+# commit LIVEPAPER_REF github.com/d3vzero/qamariah-livepaper ke /usr/local. Membersihkan
+# nama lama (aro-livepaper): file di /usr/local dan instance yang masih berjalan.
+install_livepaper() {
+    local old
+    old="$(pgrep -f 'aro-livepaper/livepaper.py' || true)"
+    if [ -n "$old" ]; then kill $old 2>/dev/null; echo "    instance aro-livepaper lama dihentikan"; fi
+    if [ -e /usr/local/bin/aro-livepaper ] || [ -d /usr/local/share/aro-livepaper ]; then
+        rm -f /usr/local/bin/aro-livepaper; rm -rf /usr/local/share/aro-livepaper
+        echo "    sisa aro-livepaper di /usr/local dihapus"
+    fi
+    [ "$LIVEPAPER" = "yes" ] || return 0
+    local src=/opt/qamariah-livepaper-src stamp=/usr/local/share/qamariah-livepaper/.ref
+    if [ -x /usr/local/bin/qamariah-livepaper ] && [ "$(cat "$stamp" 2>/dev/null)" = "$LIVEPAPER_REF" ] && [ "${UPDATE_LIVEPAPER:-0}" != "1" ]; then
+        echo "    qamariah-livepaper $LIVEPAPER_REF sudah ada -- skip (UPDATE_LIVEPAPER=1 untuk pasang ulang)"
+        return 0
+    fi
+    [ -d "$src/.git" ] || { rm -rf "$src"; git clone --quiet https://github.com/d3vzero/qamariah-livepaper "$src"; }
+    git -C "$src" fetch --quiet origin
+    git -C "$src" checkout --quiet --force "$LIVEPAPER_REF"
+    install -Dm644 "$src/livepaper.py"       /usr/local/share/qamariah-livepaper/livepaper.py
+    install -Dm644 "$src/config.example.ini" /usr/local/share/qamariah-livepaper/config.example.ini
+    install -Dm644 "$src/stars.dat"          /usr/local/share/qamariah-livepaper/stars.dat
+    install -Dm755 "$src/qamariah-livepaper" /usr/local/bin/qamariah-livepaper
+    echo "$LIVEPAPER_REF" > "$stamp"
+    echo "    qamariah-livepaper $LIVEPAPER_REF -> /usr/local/bin/qamariah-livepaper"
 }
 
 install_superfile() {
@@ -502,6 +533,17 @@ setup_public_home() {
         printf '\nbind = mod+b, spawn, kitty --class bluetui -e bluetui\n' >> "$AC"
         # segmen bar: nama perangkat Bluetooth, kiri jaringan; klik -> bluetui
         printf 'bar_segment = top right bt  kitty --class bluetui -e bluetui\n' >> "$AC"
+    fi
+    if [ "$LIVEPAPER" = "yes" ]; then
+        printf '\n# live wallpaper (LIVEPAPER): langit, bulan, bintang, laut -- layer background\nexec = qamariah-livepaper\n' >> "$AC"
+        # config: dibuat sekali (dari config lama aro-livepaper kalau ada), lalu milik user
+        local lp="$H/.config/qamariah-livepaper/config.ini" lpo="$H/.config/aro-livepaper/config.ini"
+        if [ ! -e "$lp" ]; then
+            install -d -o "$PUBLIC_USER" -g "$PUBLIC_USER" "$H/.config/qamariah-livepaper"
+            if [ -f "$lpo" ]; then cp "$lpo" "$lp"; else cp /usr/local/share/qamariah-livepaper/config.example.ini "$lp"; fi
+            chown "$PUBLIC_USER:$PUBLIC_USER" "$lp"
+            echo "    config live wallpaper: $lp (lat/lon = lokasi pengamat)"
+        fi
     fi
     # Tambahan aro per profil (profiles/<p>/aro.conf), hanya profil yang aktif
     local pr

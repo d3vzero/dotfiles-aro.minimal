@@ -68,6 +68,7 @@ build_aro
 install_superfile
 install_blesh
 install_whyd
+install_livepaper
 
 step "[7/10] File sistem + service dinit"
 install_system_files
