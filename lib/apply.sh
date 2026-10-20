@@ -60,7 +60,7 @@ load_conf() {
     WHYD="${WHYD:-yes}"
     WHYD_REF="${WHYD_REF:-783e5c0}"
     LIVEPAPER="${LIVEPAPER:-no}"
-    LIVEPAPER_REF="${LIVEPAPER_REF:-f7e3180}"
+    LIVEPAPER_REF="${LIVEPAPER_REF:-7b1cd93}"
 
     case "$CPU" in amd|intel) ;; *) die "CPU='$CPU' tidak valid (amd | intel)" ;; esac
     case "$GPU" in amd|nvidia|intel|vm) ;; *) die "GPU='$GPU' tidak valid (amd | nvidia | intel | vm)" ;; esac
@@ -244,7 +244,7 @@ install_packages() {
     if [ "$ENABLE_BLUETOOTH" = "yes" ]; then pkgs+=(bluez bluez-utils bluez-dinit bluetui); fi
     if [ "$LOG_PERSIST" = "yes" ]; then pkgs+=(syslog-ng syslog-ng-dinit); fi
     if [ "$LOG_PERSIST" = "yes" ] && [ "$WHYD" = "yes" ]; then pkgs+=(go); fi   # build whyd-init
-    if [ "$LIVEPAPER" = "yes" ]; then pkgs+=(gtk4 gtk4-layer-shell python-gobject python-cairo); fi
+    if [ "$LIVEPAPER" = "yes" ]; then pkgs+=(gtk4 gtk4-layer-shell python-gobject python-cairo python-numpy); fi
     # driver NVIDIA yang sedang ditahan dan sudah terpasang tidak diminta lagi
     # (kalau diminta, pacman mencoba menaikkannya dan bentrok)
     if [ -n "${NVIDIA_HELD:-}" ]; then
