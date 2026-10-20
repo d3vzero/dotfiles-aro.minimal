@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Claude Code
+GenericName=Agent coding (perencana + pemeriksa)
+Comment=Claude Code di terminal; menulis kode lewat qwen-task (model lokal); pilih proyek di ~/Projects
+Exec=ai-project claude
+Icon=utilities-terminal
+Terminal=false
+Type=Application
+Categories=Development;
+Keywords=ai;claude;agent;coding;anthropic;

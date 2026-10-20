@@ -8,7 +8,15 @@ set -euo pipefail
 . "$CONF_D/ai-llm.conf"
 PUB="$PUBLIC_USER"; H="$PUBLIC_HOME"
 
-install -m755 "$PDIR/bin/llm" "$PDIR/bin/qwen-task" /usr/local/bin/
+install -m755 "$PDIR/bin/llm" "$PDIR/bin/qwen-task" "$PDIR/bin/ai-project" /usr/local/bin/
+# launcher: OpenCode dan Claude Code (pilih proyek, buka di kitty dengan app id sendiri)
+install -d /usr/local/share/applications
+install -m644 "$PDIR/desktop/opencode.desktop" /usr/local/share/applications/opencode.desktop
+if [ "${CLAUDE_CODE:-yes}" = yes ]; then
+    install -m644 "$PDIR/desktop/claude.desktop" /usr/local/share/applications/claude.desktop
+else
+    rm -f /usr/local/share/applications/claude.desktop
+fi
 install -d -o "$PUB" -g "$PUB" "$H/models"
 
 if [ "$GPU" != nvidia ]; then

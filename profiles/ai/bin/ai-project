@@ -1,0 +1,25 @@
+#!/bin/bash
+# ai-project opencode|claude -- buka agent coding di sebuah proyek (dari launcher).
+# Pilih folder lewat fuzzel: repo git di ~/Projects (terbaru dipakai di atas),
+# lalu buka kitty di folder itu dengan app id sesuai agent (tampil di bar bawah).
+#   opencode   OpenCode + model lokal (llm start otomatis kalau belum berjalan)
+#   claude     Claude Code (perencana + pemeriksa, mendelegasikan ke qwen-task)
+set -uo pipefail
+agent="${1:-}"
+case "$agent" in
+    opencode) title="OpenCode" ;;
+    claude)   title="Claude Code" ;;
+    *) echo "pakai: ai-project opencode|claude" >&2; exit 2 ;;
+esac
+command -v "$agent" >/dev/null || { notify-send -a "$title" "$agent tidak terpasang" "profil ai, bagian llm"; exit 1; }
+base="$HOME/Projects"
+mapfile -t repos < <(for d in "$base"/*/.git; do [ -e "$d" ] && dirname "$d"; done |
+                     xargs -r -d '\n' ls -dt 2>/dev/null | xargs -r -d '\n' -n1 basename)
+(( ${#repos[@]} )) || { notify-send -a "$title" "Belum ada repo git di $base" ""; exit 1; }
+pick="$(printf '%s\n' "${repos[@]}" | fuzzel --dmenu --prompt "$title ❯ " --lines "$(( ${#repos[@]} < 12 ? ${#repos[@]} : 12 ))")" || exit 0
+dir="$base/$pick"; [ -d "$dir" ] || exit 1
+if [ "$agent" = opencode ] && ! llm status 2>/dev/null | grep -q '^berjalan'; then
+    notify-send -a "$title" "Menjalankan model lokal…" "llm start"
+    llm start >/dev/null 2>&1 || { notify-send -u critical -a "$title" "llm start gagal" "llm log"; exit 1; }
+fi
+exec kitty --class "$agent" --title "$title — $pick" --directory "$dir" -e "$agent"

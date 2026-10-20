@@ -532,6 +532,10 @@ config sendiri di `/etc/dotfiles-aro.minimal.d/` (dibuat sekali dari template di
   dilarang commit/push/ganti branch/gh/sudo/unduh), menolak bekerja di main, mulai dari
   working tree bersih, hasil dibiarkan belum di-commit untuk diperiksa, log di
   `.git/qwen-task/`.
+- **Launcher**: *OpenCode* dan *Claude Code* ada di daftar aplikasi (`ai-project`):
+  pilih repo git di `~/Projects` lewat fuzzel, lalu agent dibuka di kitty di folder itu
+  (app id `opencode` / `claude`, tampil di bar bawah). OpenCode menjalankan `llm start`
+  dulu kalau model belum aktif. Segmen **LLM** ada di kanan bawah, kiri USB.
 - **GitHub**: `gh auth login` di akun umum dengan *fine-grained token* (hanya repo yang
   dikerjakan agent, Contents + Pull requests, ada masa berlaku); kerja di branch, gabung
   lewat pull request; aktifkan branch protection di `main`.

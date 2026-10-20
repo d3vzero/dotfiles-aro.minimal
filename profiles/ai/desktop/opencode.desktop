@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=OpenCode
+GenericName=Agent coding (model lokal)
+Comment=Agent coding di terminal dengan model lokal (llama-server); pilih proyek di ~/Projects
+Exec=ai-project opencode
+Icon=utilities-terminal
+Terminal=false
+Type=Application
+Categories=Development;
+Keywords=ai;llm;qwen;agent;coding;opencode;
