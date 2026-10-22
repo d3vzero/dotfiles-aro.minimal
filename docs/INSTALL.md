@@ -385,6 +385,14 @@ Config: `~/.config/qamariah-livepaper/config.ini` (dibuat sekali; `lat`/`lon` = 
 pengamat). Sisa nama lama `aro-livepaper` dibersihkan otomatis. `UPDATE_LIVEPAPER=1`
 memasang ulang.
 
+> **lib32 mengunci versi Arch.** Paket `lib32-*` dari `[multilib]` mengunci library
+> dasarnya ke versi Arch yang persis (`lib32-libelf` → `libelf=0.197`). Kalau repo Artix
+> masih versi lama, `pacman -Su` gagal (*could not satisfy dependencies*: `libelf` 0.197
+> dari `[core]`, `elfutils` 0.196 dari `system`). `update.sh` (`sync_lib32_pins`, sebelum
+> `-Su`) menaikkan library itu, saudaranya yang ikut mengunci (`elfutils`), dan `lib32-*`-nya
+> bersama dari repo Arch dalam satu transaksi. Peringatan `local is newer than system`
+> sesudahnya wajar dan hilang saat Artix menyusul.
+
 ## 5. Admin & update
 
 Admin login di tty lain: `Ctrl+Alt+F2` → login `Admin`.

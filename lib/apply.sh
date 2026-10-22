@@ -195,6 +195,60 @@ rank_mirrors() {
     esac || warn "aro-mirrors gagal -- lanjut dengan mirrorlist yang ada"
 }
 
+# Paket lib32-* dari [multilib] mengunci library dasarnya ke versi Arch yang PERSIS
+# (lib32-libelf -> libelf=0.197, lib32-expat -> expat=...). Kalau repo Artix
+# (system/world) masih versi lama, pacman -Su menarik library itu dari [core]/[extra]
+# Arch tapi paket saudaranya (elfutils, yang mengunci libelf=versi lama) tetap
+# dari Artix -> "could not satisfy dependencies". Di sini: library dasar, saudara-
+# saudaranya yang ikut terkunci, dan lib32-*-nya dinaikkan bersama dari repo Arch
+# dalam satu transaksi, sebelum -Su. lib32-nvidia-utils diurus nvidia_hold.
+_pac_field() {   # _pac_field <-Si|-Qi> <paket> <nama field> -> nilai (baris lanjutan digabung)
+    pacman "$1" "$2" 2>/dev/null | awk -v f="$3" '
+        index($0, f) == 1 { sub(/^[^:]*: */, ""); v = $0; on = 1; next }
+        on && /^ / { v = v " " $0; next }
+        on { exit }
+        END { if (v != "None") print v }'
+}
+
+_ver_is() {      # _ver_is <versi pkg (x.y-rel)> <versi pin (x.y atau x.y-rel)>
+    [ "$1" = "$2" ] || [ "${1%-*}" = "$2" ]
+}
+
+sync_lib32_pins() {
+    grep -q '^\[multilib\]' /etc/pacman.conf || return 0
+    local want=() p dep name pin cur repo v r rdep
+    for p in $(pacman -Qq | grep '^lib32-'); do
+        [ "$p" = lib32-nvidia-utils ] && continue
+        for dep in $(_pac_field -Si "multilib/$p" "Depends On"); do
+            case "$dep" in lib32-*|*'>'*|*'<'*) continue ;; *=*) ;; *) continue ;; esac
+            name="${dep%%=*}"; pin="${dep#*=}"
+            cur="$(pacman -Q "$name" 2>/dev/null | awk '{ print $2 }')"
+            [ -n "$cur" ] || continue
+            _ver_is "$cur" "$pin" && continue
+            for repo in core extra; do
+                v="$(_pac_field -Si "$repo/$name" "Version")"
+                _ver_is "$v" "$pin" || continue
+                want+=("$repo/$name" "multilib/$p")
+                # saudara yang mengunci library ini ke versi sekarang (elfutils -> libelf=0.196)
+                for r in $(_pac_field -Qi "$name" "Required By"); do
+                    case "$r" in lib32-*) continue ;; esac
+                    for rdep in $(_pac_field -Qi "$r" "Depends On"); do
+                        [ "$rdep" = "$name=${cur%-*}" ] || [ "$rdep" = "$name=$cur" ] || continue
+                        if _ver_is "$(_pac_field -Si "$repo/$r" "Version")" "$pin"; then
+                            want+=("$repo/$r")
+                        fi
+                    done
+                done
+                break
+            done
+        done
+    done
+    [ "${#want[@]}" -gt 0 ] || return 0
+    mapfile -t want < <(printf '%s\n' "${want[@]}" | sort -u)
+    echo "    lib32 mengunci versi Arch -- naik bersama dari repo Arch: ${want[*]}"
+    pacman -S --needed --noconfirm "${want[@]}" || warn "sinkron lib32 gagal: ${want[*]}"
+}
+
 enable_repos() {
     rank_mirrors                      # mirrorlist Artix (mirrorlist-arch belum tentu ada)
     pacman -S --needed --noconfirm artix-archlinux-support
@@ -216,6 +270,7 @@ enable_repos() {
     pacman-key --init
     pacman-key --populate archlinux
     pacman -Sy --noconfirm
+    sync_lib32_pins
     NVIDIA_HELD="$(nvidia_hold)"
     if [ -n "$NVIDIA_HELD" ]; then
         warn "driver NVIDIA ditahan: multilib $(pacman -Si lib32-nvidia-utils | awk '/^Version/ { print $3; exit }'), world $(pacman -Si nvidia-open-dkms | awk '/^Version/ { print $3; exit }') -- naik bersama setelah Artix menyusul"
