@@ -207,7 +207,7 @@ _pac_field() {   # _pac_field <-Si|-Qi> <paket> <nama field> -> nilai (baris lan
         index($0, f) == 1 { sub(/^[^:]*: */, ""); v = $0; on = 1; next }
         on && /^ / { v = v " " $0; next }
         on { exit }
-        END { if (v != "None") print v }'
+        END { if (v != "None") print v }' || true     # paket tidak ada: kosong, bukan error
 }
 
 _ver_is() {      # _ver_is <versi pkg (x.y-rel)> <versi pin (x.y atau x.y-rel)>
@@ -222,7 +222,7 @@ sync_lib32_pins() {
         for dep in $(_pac_field -Si "multilib/$p" "Depends On"); do
             case "$dep" in lib32-*|*'>'*|*'<'*) continue ;; *=*) ;; *) continue ;; esac
             name="${dep%%=*}"; pin="${dep#*=}"
-            cur="$(pacman -Q "$name" 2>/dev/null | awk '{ print $2 }')"
+            cur="$(pacman -Q "$name" 2>/dev/null | awk '{ print $2 }' || true)"
             [ -n "$cur" ] || continue
             _ver_is "$cur" "$pin" && continue
             for repo in core extra; do
