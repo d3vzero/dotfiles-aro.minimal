@@ -406,6 +406,7 @@ install_livepaper() {
         echo "    sisa aro-livepaper di /usr/local dihapus"
     fi
     [ "$LIVEPAPER" = "yes" ] || return 0
+    [ -n "$LIVEPAPER_REF" ] || { warn "LIVEPAPER_REF kosong -- qamariah-livepaper dilewati (isi commit di machine.conf)"; return 0; }
     local src=/opt/qamariah-livepaper-src stamp=/usr/local/share/qamariah-livepaper/.ref
     if [ -x /usr/local/bin/qamariah-livepaper ] && [ "$(cat "$stamp" 2>/dev/null)" = "$LIVEPAPER_REF" ] && [ "${UPDATE_LIVEPAPER:-0}" != "1" ]; then
         echo "    qamariah-livepaper $LIVEPAPER_REF sudah ada -- skip (UPDATE_LIVEPAPER=1 untuk pasang ulang)"
