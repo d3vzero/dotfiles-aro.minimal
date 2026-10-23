@@ -60,7 +60,7 @@ load_conf() {
     WHYD="${WHYD:-yes}"
     WHYD_REF="${WHYD_REF:-783e5c0}"
     LIVEPAPER="${LIVEPAPER:-no}"
-    LIVEPAPER_REF="${LIVEPAPER_REF:-}"
+    LIVEPAPER_REF="${LIVEPAPER_REF:-3d583f5}"
 
     case "$CPU" in amd|intel) ;; *) die "CPU='$CPU' tidak valid (amd | intel)" ;; esac
     case "$GPU" in amd|nvidia|intel|vm) ;; *) die "GPU='$GPU' tidak valid (amd | nvidia | intel | vm)" ;; esac
