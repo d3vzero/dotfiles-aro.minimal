@@ -60,7 +60,7 @@ load_conf() {
     WHYD="${WHYD:-yes}"
     WHYD_REF="${WHYD_REF:-783e5c0}"
     LIVEPAPER="${LIVEPAPER:-no}"
-    LIVEPAPER_REF="${LIVEPAPER_REF:-22a15a0}"
+    LIVEPAPER_REF="${LIVEPAPER_REF:-}"
 
     case "$CPU" in amd|intel) ;; *) die "CPU='$CPU' tidak valid (amd | intel)" ;; esac
     case "$GPU" in amd|nvidia|intel|vm) ;; *) die "GPU='$GPU' tidak valid (amd | nvidia | intel | vm)" ;; esac
@@ -414,10 +414,10 @@ install_livepaper() {
     [ -d "$src/.git" ] || { rm -rf "$src"; git clone --quiet https://github.com/d3vzero/qamariah-livepaper "$src"; }
     git -C "$src" fetch --quiet origin
     git -C "$src" checkout --quiet --force "$LIVEPAPER_REF"
-    install -Dm644 "$src/livepaper.py"       /usr/local/share/qamariah-livepaper/livepaper.py
-    install -Dm644 "$src/config.example.ini" /usr/local/share/qamariah-livepaper/config.example.ini
-    install -Dm644 "$src/stars.dat"          /usr/local/share/qamariah-livepaper/stars.dat
-    install -Dm755 "$src/qamariah-livepaper" /usr/local/bin/qamariah-livepaper
+    # install.sh milik repo: memasang semua file (launcher, menu, data) -- file baru di
+    # versi berikutnya ikut terpasang tanpa mengubah dotfiles. Dependensi sudah ada.
+    (cd "$src" && sh ./install.sh) > /tmp/qamariah-livepaper-install.log 2>&1 ||
+        { warn "install.sh qamariah-livepaper gagal -- lihat /tmp/qamariah-livepaper-install.log"; return 0; }
     echo "$LIVEPAPER_REF" > "$stamp"
     echo "    qamariah-livepaper $LIVEPAPER_REF -> /usr/local/bin/qamariah-livepaper"
 }
@@ -591,6 +591,7 @@ setup_public_home() {
     fi
     if [ "$LIVEPAPER" = "yes" ]; then
         printf '\n# live wallpaper (LIVEPAPER): langit, bulan, bintang, laut -- layer background\nexec = qamariah-livepaper\n' >> "$AC"
+        printf 'bind = mod+w, spawn, qamariah-livepaper-menu\n' >> "$AC"   # scene, lokasi, kehalusan
         # config: dibuat sekali (dari config lama aro-livepaper kalau ada), lalu milik user
         local lp="$H/.config/qamariah-livepaper/config.ini" lpo="$H/.config/aro-livepaper/config.ini"
         if [ ! -e "$lp" ]; then
