@@ -61,6 +61,8 @@ load_conf() {
     WHYD_REF="${WHYD_REF:-783e5c0}"
     LIVEPAPER="${LIVEPAPER:-no}"
     TAILSCALE="${TAILSCALE:-no}"
+    SHARED_DIR="${SHARED_DIR:-}"
+    SHARED_SUBDIRS="${SHARED_SUBDIRS:-Documents Downloads Musics Movies Pictures Project}"
     LIVEPAPER_REF="${LIVEPAPER_REF:-3d583f5}"
 
     case "$CPU" in amd|intel) ;; *) die "CPU='$CPU' tidak valid (amd | intel)" ;; esac
@@ -511,6 +513,55 @@ EOF
     else
         echo "    tailscale terpasang -- login sekali: sudo tailscale up --accept-dns=false"
     fi
+}
+
+# Folder bersama (SHARED_DIR): bisa dibaca & ditulis SEMUA akun manusia (UID 1000+,
+# sekarang maupun yang dibuat nanti) lewat grup "shared" + ACL. ACL bawaan diwariskan
+# ke setiap file/folder baru, jadi isi dari akun mana pun (juga SFTP/X-plore) tetap
+# bisa diubah akun lain. Tiap akun mendapat pintasan ~/shared.
+#   SHARED_FIX=1  terapkan ulang ACL ke seluruh isi (mis. file yang disalin dengan
+#                 izin lama); tanpa itu hanya folder utama & subfolder yang disentuh.
+setup_shared() {
+    [ -n "$SHARED_DIR" ] || return 0
+    local d="$SHARED_DIR" u home sub users=()
+    getent group shared >/dev/null || groupadd -r shared
+    while IFS=: read -r u _ uid _ _ home shell; do
+        [ "$uid" -ge 1000 ] && [ "$uid" -lt 60000 ] || continue
+        case "$shell" in */nologin|*/false) continue ;; esac
+        [ -d "$home" ] || continue
+        users+=("$u")
+        id -nG "$u" | tr ' ' '\n' | grep -qx shared || usermod -aG shared "$u"
+    done < /etc/passwd
+    if [ ! -d "$d" ]; then
+        install -d -m 2770 -o "$ADMIN_USER" -g shared "$d"
+        echo "    folder bersama dibuat: $d"
+    fi
+    chgrp shared "$d"; chmod 2770 "$d"
+    for sub in $SHARED_SUBDIRS; do
+        [ -d "$d/$sub" ] || install -d -m 2770 -o "$ADMIN_USER" -g shared "$d/$sub"
+    done
+    # grup shared (semua akun, juga yang baru) + entri per akun yang sudah ada sebelumnya
+    local acl="g:shared:rwx" dacl="g:shared:rwx"
+    for u in "${users[@]}"; do acl+=",u:$u:rwx"; dacl+=",u:$u:rwx"; done
+    if [ "${SHARED_FIX:-0}" = "1" ]; then
+        chgrp -R shared "$d"
+        find "$d" -type d -exec chmod g+rwxs {} +
+        setfacl -R -m "$acl" "$d"
+        find "$d" -type d -exec setfacl -d -m "$dacl" {} +
+        echo "    ACL folder bersama diterapkan ulang ke seluruh isi (SHARED_FIX=1)"
+    else
+        for sub in "$d" $(for s in $SHARED_SUBDIRS; do echo "$d/$s"; done); do
+            chgrp shared "$sub"; chmod g+rwxs "$sub"
+            setfacl -m "$acl" "$sub"; setfacl -d -m "$dacl" "$sub"
+        done
+    fi
+    for u in "${users[@]}"; do
+        home="$(getent passwd "$u" | cut -d: -f6)"
+        if [ ! -e "$home/shared" ] || [ -L "$home/shared" ]; then
+            ln -sfn "$d" "$home/shared"; chown -h "$u:" "$home/shared" 2>/dev/null || true
+        fi
+    done
+    echo "    folder bersama: $d (${users[*]}; grup shared)"
 }
 
 enable_services() {

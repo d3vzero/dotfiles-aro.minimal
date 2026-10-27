@@ -73,6 +73,7 @@ install_livepaper
 step "[7/10] File sistem + service dinit"
 install_system_files
 enable_services
+setup_shared
 setup_logging
 
 step "[8/10] Setup profil"

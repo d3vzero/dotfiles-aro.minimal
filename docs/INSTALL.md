@@ -403,6 +403,15 @@ NetworkManager dan internet bisa putus). `ENABLE_SSH="tailscale"`: sshd aktif ta
 root tidak boleh login. HP: aplikasi Tailscale (akun yang sama), lalu X-plore → SFTP ke
 alamat Tailscale PC (100.x.y.z atau nama MagicDNS), port 22, user admin.
 
+## 4m. Folder bersama (`SHARED_DIR`)
+
+`SHARED_DIR="/home/shared"`: folder yang bisa dibaca & ditulis semua akun manusia (UID 1000+,
+termasuk akun yang dibuat kemudian) lewat grup `shared` + ACL; ACL bawaan diwariskan ke
+isi baru, jadi file dari akun mana pun (juga upload SFTP/X-plore) bisa diubah akun lain.
+Subfolder dari `SHARED_SUBDIRS`, pintasan `~/shared` di tiap home. Akun baru: jalankan
+`update.sh` sekali (masuk grup `shared` + pintasan; berlaku setelah login ulang).
+`SHARED_FIX=1` menerapkan ulang izin ke seluruh isi (file yang disalin dengan izin lama).
+
 ## 5. Admin & update
 
 Admin login di tty lain: `Ctrl+Alt+F2` → login `Admin`.

@@ -22,7 +22,7 @@ step "[1/8] Cek hardware vs config";    validate_hw
 step "[2/8] Repo Arch + full upgrade";   enable_repos
 step "[3/8] Paket (core + $PROFILES)";   install_packages; setup_initramfs
 step "[4/8] aro + superfile + ble.sh + whyd + livepaper"; build_aro; install_superfile; install_blesh; install_whyd; install_livepaper
-step "[5/8] File sistem + service + tmpfs"; install_system_files; enable_services; setup_logging; apply_tmpfs
+step "[5/8] File sistem + service + tmpfs"; install_system_files; enable_services; setup_shared; setup_logging; apply_tmpfs
 step "[6/8] Setup profil";               run_profile_hooks
 step "[7/8] Home $PUBLIC_USER";          setup_public_home
 step "[8/8] EFISTUB (cmdline dari CPU/GPU)"; setup_efistub
