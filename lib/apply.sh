@@ -60,6 +60,7 @@ load_conf() {
     WHYD="${WHYD:-yes}"
     WHYD_REF="${WHYD_REF:-783e5c0}"
     LIVEPAPER="${LIVEPAPER:-no}"
+    TAILSCALE="${TAILSCALE:-no}"
     LIVEPAPER_REF="${LIVEPAPER_REF:-3d583f5}"
 
     case "$CPU" in amd|intel) ;; *) die "CPU='$CPU' tidak valid (amd | intel)" ;; esac
@@ -295,7 +296,8 @@ install_packages() {
     if [ "$GPU" != "vm" ]; then pkgs+=("${CPU}-ucode"); fi
     # shellcheck disable=SC2207
     pkgs+=($(gpu_packages))
-    if [ "$ENABLE_SSH" = "yes" ]; then pkgs+=(openssh openssh-dinit); fi
+    case "$ENABLE_SSH" in yes|tailscale) pkgs+=(openssh openssh-dinit) ;; esac
+    if [ "$TAILSCALE" = "yes" ]; then pkgs+=(tailscale); fi
     if [ "$ENABLE_BLUETOOTH" = "yes" ]; then pkgs+=(bluez bluez-utils bluez-dinit bluetui); fi
     if [ "$LOG_PERSIST" = "yes" ]; then pkgs+=(syslog-ng syslog-ng-dinit); fi
     if [ "$LOG_PERSIST" = "yes" ] && [ "$WHYD" = "yes" ]; then pkgs+=(go); fi   # build whyd-init
@@ -476,16 +478,76 @@ EOF
     fi
 }
 
+# Tailscale (TAILSCALE=yes): VPN pribadi -> PC bisa dijangkau dari mana saja tanpa
+# membuka port (juga di belakang CGNAT). Login akun Tailscale sekali, manual:
+#   sudo tailscale up --accept-dns=false
+# (--accept-dns=false: tailscale tidak menimpa /etc/resolv.conf milik NetworkManager)
+setup_tailscale() {
+    local svc=/etc/dinit.d/tailscaled
+    if [ "$TAILSCALE" != "yes" ]; then
+        if [ -e /etc/dinit.d/boot.d/tailscaled ]; then
+            rm -f /etc/dinit.d/boot.d/tailscaled
+            dinitctl stop tailscaled >/dev/null 2>&1 || true
+            echo "    tailscaled dinonaktifkan"
+        fi
+        return 0
+    fi
+    # service dinit sendiri, kecuali sudah disediakan paket (mis. tailscale-dinit)
+    if ! pacman -Qqo "$svc" >/dev/null 2>&1; then
+        cat > "$svc" <<'EOF'
+# dikelola dotfiles-aro (TAILSCALE=yes)
+type = process
+command = /bin/sh -c "mkdir -p /run/tailscale /var/lib/tailscale && exec /usr/bin/tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/run/tailscale/tailscaled.sock --port=41641"
+waits-for = NetworkManager
+restart = true
+smooth-recovery = true
+logfile = /var/log/tailscaled.log
+EOF
+    fi
+    ln -sf "$svc" /etc/dinit.d/boot.d/
+    dinitctl start tailscaled >/dev/null 2>&1 || true
+    if tailscale status >/dev/null 2>&1; then
+        echo "    tailscale: $(tailscale ip -4 2>/dev/null | head -n1) ($(tailscale status --self --json 2>/dev/null | jq -r '.Self.DNSName' 2>/dev/null))"
+    else
+        echo "    tailscale terpasang -- login sekali: sudo tailscale up --accept-dns=false"
+    fi
+}
+
 enable_services() {
     local svc
     for svc in NetworkManager elogind; do
         ln -sf /etc/dinit.d/$svc /etc/dinit.d/boot.d/
     done
-    if [ "$ENABLE_SSH" = "yes" ]; then
-        ln -sf /etc/dinit.d/sshd /etc/dinit.d/boot.d/
-    else
-        rm -f /etc/dinit.d/boot.d/sshd
-    fi
+    setup_tailscale
+    local dropin=/etc/ssh/sshd_config.d/10-aro.conf
+    case "$ENABLE_SSH" in
+    yes|tailscale)
+        if [ "$ENABLE_SSH" = tailscale ]; then
+            # login (SSH/SFTP) hanya dari jaringan Tailscale; dari LAN/internet ditolak
+            install -d /etc/ssh/sshd_config.d
+            grep -q '^Include /etc/ssh/sshd_config.d/\*.conf' /etc/ssh/sshd_config ||
+                sed -i '1i Include /etc/ssh/sshd_config.d/*.conf' /etc/ssh/sshd_config
+            cat > "$dropin" <<EOF
+# dikelola dotfiles-aro (ENABLE_SSH=tailscale) -- jangan diedit, ditulis ulang tiap update
+PermitRootLogin no
+AllowUsers $ADMIN_USER@100.64.0.0/10 $ADMIN_USER@fd7a:115c:a1e0::/48
+EOF
+        else
+            rm -f "$dropin"
+        fi
+        if sshd -t 2>/tmp/sshd-test.log; then
+            ln -sf /etc/dinit.d/sshd /etc/dinit.d/boot.d/
+            dinitctl restart sshd >/dev/null 2>&1 || dinitctl start sshd >/dev/null 2>&1 || true
+            echo "    sshd aktif ($ENABLE_SSH)"
+        else
+            warn "konfigurasi sshd tidak valid -- lihat /tmp/sshd-test.log; sshd tidak diaktifkan"
+            rm -f /etc/dinit.d/boot.d/sshd
+        fi
+        ;;
+    *)
+        rm -f /etc/dinit.d/boot.d/sshd "$dropin"
+        ;;
+    esac
     if [ "$ENABLE_BLUETOOTH" = "yes" ]; then
         [ -e /etc/dinit.d/bluetoothd ] || warn "service dinit 'bluetoothd' tidak ada -- cek: ls /etc/dinit.d | grep -i blue"
         ln -sf /etc/dinit.d/bluetoothd /etc/dinit.d/boot.d/

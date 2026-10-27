@@ -393,6 +393,16 @@ memasang ulang.
 > bersama dari repo Arch dalam satu transaksi. Peringatan `local is newer than system`
 > sesudahnya wajar dan hilang saat Artix menyusul.
 
+## 4l. Akses file dari mana saja (`TAILSCALE`, `ENABLE_SSH=tailscale`)
+
+`TAILSCALE="yes"`: VPN pribadi Tailscale (service dinit `tailscaled`), PC bisa dijangkau dari
+HP di mana saja tanpa membuka port, juga di belakang CGNAT. Login sekali:
+`sudo tailscale up --accept-dns=false` (tanpa `--accept-dns=false`, Tailscale menimpa DNS
+NetworkManager dan internet bisa putus). `ENABLE_SSH="tailscale"`: sshd aktif tapi
+`AllowUsers <ADMIN_USER>@100.64.0.0/10 …` -- login SSH/SFTP hanya dari jaringan Tailscale,
+root tidak boleh login. HP: aplikasi Tailscale (akun yang sama), lalu X-plore → SFTP ke
+alamat Tailscale PC (100.x.y.z atau nama MagicDNS), port 22, user admin.
+
 ## 5. Admin & update
 
 Admin login di tty lain: `Ctrl+Alt+F2` → login `Admin`.
