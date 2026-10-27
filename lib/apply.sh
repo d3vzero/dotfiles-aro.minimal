@@ -535,6 +535,7 @@ EOF
         else
             rm -f "$dropin"
         fi
+        ssh-keygen -A >/dev/null 2>&1 || true          # host key: dibuat sekali kalau belum ada
         if sshd -t 2>/tmp/sshd-test.log; then
             ln -sf /etc/dinit.d/sshd /etc/dinit.d/boot.d/
             dinitctl restart sshd >/dev/null 2>&1 || dinitctl start sshd >/dev/null 2>&1 || true
