@@ -450,7 +450,7 @@ install_superfile() {
 
 install_system_files() {
     # Script utilitas ke /usr/local/bin: milik root, tidak bisa diubah PUBLIC_USER
-    install -m755 "$REPO_DIR"/core/bin/* /usr/local/bin/
+    find "$REPO_DIR"/core/bin -maxdepth 1 -type f -exec install -m755 -t /usr/local/bin/ {} +
     install -m755 "$REPO_DIR"/tools/aro-stress /usr/local/bin/   # uji ketahanan aro (tools/README.md)
     # Entry launcher (fuzzel): superfile + Pengaturan (Jaringan, Bluetooth, Monitor
     # digabung di aro-settings). network/bluetooth.desktop versi lama dibuang.
