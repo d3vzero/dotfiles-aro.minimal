@@ -20,3 +20,8 @@ border-color=#555555
 border-color=#ffffff
 border-size=2
 default-timeout=0
+
+# waktu sholat (aro-waktu): tampil 1 menit lalu hilang sendiri, walau "critical"
+[app-name="Waktu Sholat"]
+default-timeout=60000
+ignore-timeout=0

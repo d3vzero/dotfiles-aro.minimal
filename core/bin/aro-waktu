@@ -131,8 +131,9 @@ def fmt_hm(t):
     return t.strftime("%H:%M")
 
 
-def notify(title, body, urgency="normal"):
-    subprocess.run(["notify-send", "-a", "Waktu Sholat", "-u", urgency, title, body],
+def notify(title, body, urgency="normal", ms=10000):
+    """ms: lama tampil; notifikasi hilang sendiri (juga yang penting)."""
+    subprocess.run(["notify-send", "-a", "Waktu Sholat", "-u", urgency, "-t", str(ms), title, body],
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
@@ -217,7 +218,7 @@ def daemon():
                     notify("%s %s" % (k, fmt_hm(t)), "%d menit lagi" % cfg["before"])
                 if dt.timedelta(0) <= now - t < dt.timedelta(minutes=2) and key + k not in done:
                     done.add(key + k)
-                    notify("Waktu %s" % k, "%s — selamat menunaikan ibadah sholat" % fmt_hm(t), "critical")
+                    notify("Waktu %s" % k, "%s — selamat menunaikan ibadah sholat" % fmt_hm(t), "critical", 60000)
             # awal bulan & hari besar: sekali, saat tanggal Hijriah berganti (Maghrib) atau saat login
             hk = "hijri-%d-%d-%d" % (y, m, d)
             if hk not in done:

@@ -76,10 +76,39 @@ index 35e314e..3c62ccd 100644
  	int bar, pos;
  	char name[32];
 diff --git a/src/ui/bar.c b/src/ui/bar.c
-index f4aa464..6ae80c3 100644
+index f4aa464..4de21b9 100644
 --- a/src/ui/bar.c
 +++ b/src/ui/bar.c
-@@ -378,14 +378,25 @@ void bar_update(struct aro_bar *b, struct aro_output *o)
+@@ -165,6 +165,19 @@ static void app_label(struct aro_view *v, char *out, size_t n)
+ 	snprintf(out, n, "%.20s", dot && dot[1] ? dot + 1 : id);
+ }
+ 
++/* y for a bar text so that its baseline sits where plain text in the bar
++ * font would: centred by the font, not by this text's (maybe taller) layout */
++static int bar_text_y(const struct qtext *t, const char *font, int mid)
++{
++	static char cached[160];
++	static int fb, fh;
++	if (strcmp(cached, font)) {
++		qtext_font_metrics(font, &fb, &fh);
++		snprintf(cached, sizeof cached, "%s", font);
++	}
++	return mid - fh / 2 + fb - t->base;
++}
++
+ /* draw one segment at x (left edge) or ending at x (right edge) */
+ static int seg_draw(struct aro_bar *b, int i, int x, bool from_right, int mid)
+ {
+@@ -185,7 +198,7 @@ static int seg_draw(struct aro_bar *b, int i, int x, bool from_right, int mid)
+ 	qtext_set(&g->text, text, bright ? th->ink : th->dim, b->scale, 0);
+ 	g->w = g->text.w;
+ 	g->x = from_right ? x - g->w : x;
+-	qtext_move(&g->text, g->x, mid - g->text.h / 2);
++	qtext_move(&g->text, g->x, bar_text_y(&g->text, th->bar_font, mid));
+ 	return from_right ? g->x - th->bar_pad : g->x + g->w + th->bar_pad;
+ }
+ 
+@@ -378,14 +391,25 @@ void bar_update(struct aro_bar *b, struct aro_output *o)
  		if (s->cfg.bar_seg[i].bar == Q_BAR_TOP && s->cfg.bar_seg[i].pos == Q_SEG_LEFT)
  			left = seg_draw(b, i, left, false, mid);
  
@@ -102,7 +131,7 @@ index f4aa464..6ae80c3 100644
 +		if (s->cfg.bar_seg[i].bar == Q_BAR_TOP && s->cfg.bar_seg[i].pos == Q_SEG_CENTER)
 +			cw = seg_draw(b, i, cw, false, mid);
 +	int cx = (b->w - (b->clock.w + (cw ? th->bar_pad * 2 + cw - th->bar_pad : 0))) / 2;
-+	qtext_move(&b->clock, cx, mid - b->clock.h / 2);
++	qtext_move(&b->clock, cx, bar_text_y(&b->clock, th->bar_font, mid));
 +	cx += b->clock.w + th->bar_pad * 2;
 +	for (int i = 0; i < s->cfg.nbar_seg; i++)
 +		if (s->cfg.bar_seg[i].bar == Q_BAR_TOP && s->cfg.bar_seg[i].pos == Q_SEG_CENTER)
@@ -110,3 +139,85 @@ index f4aa464..6ae80c3 100644
  
  	/* right edge: battery (laptops), then right segments, first one outermost */
  	int right = b->w - th->bar_pad;
+diff --git a/src/ui/text.c b/src/ui/text.c
+index e4ffb1a..9c79d6d 100644
+--- a/src/ui/text.c
++++ b/src/ui/text.c
+@@ -105,7 +105,7 @@ static PangoLayout *layout_for(cairo_t *cr, const char *font, const char *text,
+ 
+ static struct wlr_buffer *render(const char *text, const char *font,
+                                  uint32_t color, float scale, int max_w,
+-                                 int *out_w, int *out_h)
++                                 int *out_w, int *out_h, int *out_base)
+ {
+ 	if (scale <= 0.0f)
+ 		scale = 1.0f;
+@@ -116,6 +116,7 @@ static struct wlr_buffer *render(const char *text, const char *font,
+ 	PangoLayout *probe_layout = layout_for(pcr, font, text, max_w);
+ 	int lw = 0, lh = 0;
+ 	pango_layout_get_pixel_size(probe_layout, &lw, &lh);
++	int lb = pango_layout_get_baseline(probe_layout) / PANGO_SCALE;
+ 	g_object_unref(probe_layout);
+ 	cairo_destroy(pcr);
+ 	cairo_surface_destroy(probe);
+@@ -165,6 +166,8 @@ static struct wlr_buffer *render(const char *text, const char *font,
+ 
+ 	*out_w = lw;
+ 	*out_h = lh;
++	if (out_base)
++		*out_base = lb;
+ 	return &cb->base;
+ }
+ 
+@@ -221,8 +224,8 @@ void qtext_set(struct qtext *t, const char *text, uint32_t color,
+ 		return;
+ 	}
+ 
+-	int w = 0, h = 0;
+-	struct wlr_buffer *buf = render(copy, t->font, color, scale, max_w, &w, &h);
++	int w = 0, h = 0, base = 0;
++	struct wlr_buffer *buf = render(copy, t->font, color, scale, max_w, &w, &h, &base);
+ 	if (!buf)
+ 		return;
+ 
+@@ -232,6 +235,24 @@ void qtext_set(struct qtext *t, const char *text, uint32_t color,
+ 
+ 	t->w = w;
+ 	t->h = h;
++	t->base = base;
++}
++
++/* baseline and height of plain text in this font (logical px): lets callers
++ * line up texts by baseline, so a fallback glyph (symbol, CJK) that makes one
++ * layout taller does not lift that text off the line */
++void qtext_font_metrics(const char *font, int *base, int *height)
++{
++	cairo_surface_t *probe = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 1, 1);
++	cairo_t *pcr = cairo_create(probe);
++	PangoLayout *l = layout_for(pcr, font, "Ag", 0);
++	int w = 0, h = 0;
++	pango_layout_get_pixel_size(l, &w, &h);
++	*base = pango_layout_get_baseline(l) / PANGO_SCALE;
++	*height = h;
++	g_object_unref(l);
++	cairo_destroy(pcr);
++	cairo_surface_destroy(probe);
+ }
+ 
+ void qtext_move(struct qtext *t, int x, int y)
+diff --git a/src/ui/text.h b/src/ui/text.h
+index 8e62b2e..a3b773f 100644
+--- a/src/ui/text.h
++++ b/src/ui/text.h
+@@ -19,9 +19,11 @@ struct qtext {
+ 	int max_w;
+ 
+ 	int w, h;                       /* logical size of the drawn result */
++	int base;                       /* baseline from the top (logical px) */
+ };
+ 
+ bool qtext_init(struct qtext *t, struct wlr_scene_tree *parent, const char *font);
++void qtext_font_metrics(const char *font, int *base, int *height);
+ 
+ /* render text at output scale */
+ void qtext_set(struct qtext *t, const char *text, uint32_t color,
