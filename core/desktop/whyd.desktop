@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=whyd
+GenericName=Riwayat sesi & boot
+Comment=Kenapa sesi atau boot sebelumnya berhenti (crash, mati daya, panic) -- dari log sistem
+Exec=kitty --class whyd -e whyd-open
+Icon=utilities-system-monitor
+Terminal=false
+Type=Application
+Categories=System;Monitor;
+Keywords=whyd;log;crash;boot;shutdown;panic;riwayat;

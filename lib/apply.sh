@@ -457,6 +457,8 @@ install_system_files() {
     install -d /usr/local/share/applications
     install -m644 "$REPO_DIR"/core/desktop/*.desktop /usr/local/share/applications/
     rm -f /usr/local/share/applications/network.desktop /usr/local/share/applications/bluetooth.desktop
+    # whyd hanya di launcher kalau memang dipasang
+    if [ "$LOG_PERSIST" != "yes" ] || [ "$WHYD" != "yes" ]; then rm -f /usr/local/share/applications/whyd.desktop; fi
     # Helper root menu update (Super+U). Sudoers WAJIB divalidasi dulu:
     # file sudoers rusak bisa mengunci sudo sepenuhnya.
     install -o root -g root -m755 "$REPO_DIR"/core/sbin/* /usr/local/sbin/

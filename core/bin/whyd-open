@@ -1,0 +1,19 @@
+#!/bin/bash
+# whyd-open -- buka whyd (kenapa sesi/boot sebelumnya berhenti) dari launcher.
+# Log ada di /var/log/aro dan hanya bisa dibaca grup "log" (akun admin). Akun yang
+# bukan anggota grup itu (mis. akun umum) diminta password admin lewat su.
+if ! command -v whyd >/dev/null; then
+    echo "whyd belum terpasang (WHYD=yes + LOG_PERSIST=yes di config mesin)."
+    read -rp "Enter untuk menutup." _; exit 1
+fi
+if id -nG | tr ' ' '\n' | grep -qx log; then
+    exec whyd "$@"
+fi
+admin="$(getent group log | cut -d: -f4 | cut -d, -f1)"
+if [ -z "$admin" ]; then
+    echo "Tidak ada akun anggota grup log."; read -rp "Enter untuk menutup." _; exit 1
+fi
+echo "Log sistem hanya bisa dibaca akun $admin."
+echo "Masukkan password $admin (3x salah = akun terkunci sementara)."
+echo
+exec su - "$admin" -c "whyd $*"
