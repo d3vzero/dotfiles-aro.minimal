@@ -1,0 +1,25 @@
+#!/bin/bash
+# aro-media -- segmen bar "media" dari MPRIS (MPD lewat mpd-mpris, Sung, Firefox,
+# mpv). Mengikuti perubahan langsung (playerctl --follow), tanpa polling.
+#   ▶ Artis — Judul   (memutar, terang)      ⏸ Artis — Judul  (jeda, redup)
+#   (kosong = tidak ada pemutar -> segmen hilang)
+# Klik segmen: playerctl play-pause (tombol media tetap lewat media-key).
+set -u
+SEG="${XDG_RUNTIME_DIR:?}/aro-bar"; mkdir -p "$SEG"
+exec 9>"$SEG/.aro-media.lock"; flock -n 9 || exit 0
+MAX="${ARO_MEDIA_MAX:-48}"
+put() { printf '%s\n' "$1" > "$SEG/.media.tmp" && mv -f "$SEG/.media.tmp" "$SEG/media"; }
+trap 'rm -f "$SEG/media"' EXIT
+while true; do
+    playerctl --follow metadata --format '{{status}}	{{artist}}	{{title}}' 2>/dev/null |
+    while IFS=$'\t' read -r st ar ti; do
+        t="${ti:-}"; [ -n "${ar:-}" ] && t="$ar — $t"
+        [ "${#t}" -gt "$MAX" ] && t="${t:0:$((MAX - 1))}…"
+        case "$st" in
+            Playing) put "▶ $t" ;;
+            Paused)  put "~⏸ $t" ;;
+            *)       put "" ;;
+        esac
+    done
+    put ""; sleep 3          # pemutar terakhir hilang / playerctl keluar: coba lagi
+done

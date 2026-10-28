@@ -1,0 +1,119 @@
+#!/bin/bash
+# aro-dac -- DAC untuk MPD: bit-perfect (eksklusif) atau bersama (PipeWire).
+#   aro-dac text        isi segmen bar "dac" (ditulis aro-bar-refresh dac / aro-mpd)
+#   aro-dac menu        fuzzel: DAC aktif, mode, Check… (klik segmen)
+#   aro-dac mode bitperfect|shared
+#   aro-dac check       terminal: daftar kartu suara, pilih DAC yang dipakai
+#   aro-dac restore     terapkan mode tersimpan (saat login, dari aro-mpd)
+#
+# Bit-perfect: kartu DAC dilepas dari PipeWire (profil WirePlumber "off") lalu MPD
+# memutar langsung ke hw:CARD=<id> tanpa resample/mixer -> file lossless dikirim
+# apa adanya. Aplikasi lain (Sung, browser, game) tidak bisa memakai DAC.
+# Bersama: DAC kembali jadi output PipeWire biasa (muncul di menu SPK), MPD
+# memutar lewat PipeWire (output "System"), tidak bit-perfect.
+set -uo pipefail
+CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/aro-dac"
+STATE="$CONF_DIR/state"                       # CARD=Odo  NAME=FiiO Odo  MODE=bitperfect  PROFILE=1
+SEG="${XDG_RUNTIME_DIR:?}/aro-bar"
+mkdir -p "$CONF_DIR" "$SEG"
+CARD="" NAME="" MODE="shared" PROFILE=""
+# shellcheck disable=SC1090
+[ -f "$STATE" ] && . "$STATE"
+
+save() { printf 'CARD=%q\nNAME=%q\nMODE=%q\nPROFILE=%q\n' "$CARD" "$NAME" "$MODE" "$PROFILE" > "$STATE"; }
+put()  { printf '%s\n' "$1" > "$SEG/.dac.tmp" && mv -f "$SEG/.dac.tmp" "$SEG/dac"; }
+present() { [ -n "$CARD" ] && grep -q "\[$CARD *\]" /proc/asound/cards; }
+notify() { notify-send -a DAC "$@" 2>/dev/null; }
+
+text() {
+    if [ -z "$CARD" ]; then put "~DAC ?"
+    elif ! present; then put "~DAC ${NAME:-$CARD} –"
+    elif [ "$MODE" = bitperfect ]; then put "DAC ${NAME:-$CARD} ◆"
+    else put "DAC ${NAME:-$CARD}"; fi
+}
+
+# id node device PipeWire milik kartu ini, dan indeks profil aktifnya
+pw_dev() {
+    pw-dump 2>/dev/null | jq -r --arg c "$CARD" '
+        .[] | select(.type == "PipeWire:Interface:Device")
+            | select(.info.props["api.alsa.card.id"] == $c or .info.props["alsa.card_name"] == $c)
+            | "\(.id) \(.info.params.Profile[0].index // "")"' | head -n1
+}
+
+mpd_out() {   # mpd_out dac|system
+    command -v mpc >/dev/null || return 0
+    if [ "$1" = dac ]; then mpc -q enable only "DAC" 2>/dev/null
+    else mpc -q enable only "System" 2>/dev/null; fi
+}
+
+set_mode() {
+    local want="$1" dev id prof
+    [ -n "$CARD" ] || { notify "DAC belum dipilih" "klik segmen DAC → Check…"; return 1; }
+    read -r id prof <<<"$(pw_dev)"
+    if [ "$want" = bitperfect ]; then
+        if [ -n "${id:-}" ]; then
+            [ "${prof:-0}" != 0 ] && PROFILE="$prof"
+            wpctl set-profile "$id" 0 2>/dev/null        # profil 0 = off: kartu dilepas PipeWire
+            sleep 0.5
+        fi
+        MODE=bitperfect; save; mpd_out dac
+        notify "DAC ${NAME:-$CARD}: bit-perfect" "MPD langsung ke hw:CARD=$CARD; aplikasi lain lewat output lain"
+    else
+        mpd_out system
+        [ -n "${id:-}" ] && wpctl set-profile "$id" "${PROFILE:-1}" 2>/dev/null
+        MODE=shared; save
+        notify "DAC ${NAME:-$CARD}: bersama" "Output PipeWire biasa (menu SPK); MPD lewat PipeWire"
+    fi
+    text; aro-bar-refresh audio 2>/dev/null || true
+}
+
+check() {
+    kitty --class aro-dac --title "Pilih DAC" -e bash -c '
+        echo "Kartu suara yang terdeteksi:"; echo
+        mapfile -t L < <(grep -E "^ *[0-9]+ \[" /proc/asound/cards)
+        i=0
+        for l in "${L[@]}"; do
+            n="${l%% \[*}"; n="${n// /}"
+            id="$(sed -E "s/^ *[0-9]+ \[([^ ]+) *\].*/\1/" <<<"$l")"
+            name="$(sed -E "s/^[^]]*\]: .* - //" <<<"$l")"
+            usb=""; [ -r /proc/asound/card$n/stream0 ] && usb="  (USB)"
+            printf "  %d) %-12s %s%s\n" "$((i+1))" "$id" "$name" "$usb"
+            if [ -r /proc/asound/card$n/stream0 ]; then
+                grep -E "Format:|Rates:" /proc/asound/card$n/stream0 | sort -u | sed "s/^ */       /"
+            fi
+            i=$((i+1))
+        done
+        echo; read -rp "Nomor DAC yang dipakai (Enter = batal): " k
+        [ -z "$k" ] && exit 0
+        l="${L[$((k-1))]:-}"; [ -n "$l" ] || { echo "nomor tidak valid"; sleep 2; exit 1; }
+        id="$(sed -E "s/^ *[0-9]+ \[([^ ]+) *\].*/\1/" <<<"$l")"
+        read -rp "Nama tampilan di bar [$id]: " nm
+        aro-dac set "$id" "${nm:-$id}"
+        echo; echo "Dipakai: $id. Tekan Enter untuk menutup."; read -r'
+}
+
+menu() {
+    local cur m1 m2 pick
+    if [ -n "$CARD" ]; then cur="● ${NAME:-$CARD} (hw:CARD=$CARD)$(present || echo '  — tidak terpasang')"
+    else cur="  (belum ada DAC dipilih)"; fi
+    m1="  Mode: Bit-perfect (MPD)"; m2="  Mode: Bersama (PipeWire)"
+    [ "$MODE" = bitperfect ] && m1="● Mode: Bit-perfect (MPD)" || m2="● Mode: Bersama (PipeWire)"
+    pick="$(printf '%s\n%s\n%s\n%s\n' "$cur" "$m1" "$m2" "  Check…" |
+            fuzzel --dmenu --prompt 'DAC ❯ ' --lines 4 --width 46)" || exit 0
+    case "$pick" in
+        *Bit-perfect*) set_mode bitperfect ;;
+        *Bersama*)     set_mode shared ;;
+        *Check*)       check ;;
+    esac
+}
+
+case "${1:-text}" in
+    text)    text ;;
+    menu)    menu ;;
+    mode)    set_mode "${2:?bitperfect|shared}" ;;
+    check)   check ;;
+    set)     CARD="$2"; NAME="${3:-$2}"; save; aro-mpd restart >/dev/null 2>&1 || true
+             [ "$MODE" = bitperfect ] && set_mode bitperfect || text ;;
+    restore) text; [ "$MODE" = bitperfect ] && present && set_mode bitperfect >/dev/null ;;
+    *) sed -n '2,8p' "$0"; exit 2 ;;
+esac

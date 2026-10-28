@@ -1,0 +1,112 @@
+diff --git a/src/compositor/config.c b/src/compositor/config.c
+index c99f2dd..f2c2f67 100644
+--- a/src/compositor/config.c
++++ b/src/compositor/config.c
+@@ -483,6 +483,7 @@ void config_defaults(struct aro_config *c)
+ 	c->theme.font = strdup(TH_FONT);
+ 	c->theme.font_small = strdup(TH_FONT_SMALL);
+ 	c->theme.bar_font = strdup(TH_FONT_SMALL);
++	c->theme.bar_clock = strdup("%H:%M   %a %d %b");
+ 
+ 	install_default_binds(c);
+ }
+@@ -1186,6 +1187,7 @@ static const struct theme_key theme_keys[] = {
+ 	{ "font",       K_STR, T(font),       0, 0 },
+ 	{ "font_small", K_STR, T(font_small), 0, 0 },
+ 	{ "bar_font",   K_STR, T(bar_font),   0, 0 },
++	{ "bar_clock",  K_STR, T(bar_clock),  0, 0 },
+ };
+ #undef T
+ 
+@@ -1517,18 +1519,21 @@ bool config_load(struct aro_config *c, const char *path)
+ 			}
+ 			ok = true;
+ 		} else if (!strcasecmp(key, "bar_segment")) {
+-			/* bar_segment = top|bottom left|right <name> [command ...] */
++			/* bar_segment = top|bottom left|right|center <name> [command ...]
++			 * (center: top bar only, right after the clock, all centred) */
+ 			char where[8], side[8], name[32];
+ 			int used = 0;
+ 			ok = false;
+ 			if (c->nbar_seg < ARO_BAR_SEGS &&
+ 			    sscanf(value, "%7s %7s %31s %n", where, side, name, &used) == 3 &&
+ 			    (!strcasecmp(where, "top") || !strcasecmp(where, "bottom")) &&
+-			    (!strcasecmp(side, "left") || !strcasecmp(side, "right")) &&
++			    (!strcasecmp(side, "left") || !strcasecmp(side, "right") ||
++			     !strcasecmp(side, "center")) &&
+ 			    !strchr(name, '/')) {
+ 				struct q_bar_seg *g = &c->bar_seg[c->nbar_seg++];
+ 				g->bar = !strcasecmp(where, "top") ? Q_BAR_TOP : Q_BAR_BOTTOM;
+-				g->pos = !strcasecmp(side, "left") ? Q_SEG_LEFT : Q_SEG_RIGHT;
++				g->pos = !strcasecmp(side, "left") ? Q_SEG_LEFT :
++				         !strcasecmp(side, "right") ? Q_SEG_RIGHT : Q_SEG_CENTER;
+ 				snprintf(g->name, sizeof g->name, "%s", name);
+ 				snprintf(g->cmd, sizeof g->cmd, "%s", value + used);
+ 				ok = true;
+@@ -1588,6 +1593,7 @@ void config_finish(struct aro_config *c)
+ 	free(c->theme.font);
+ 	free(c->theme.font_small);
+ 	free(c->theme.bar_font);
++	free(c->theme.bar_clock);
+ 	free(c->xkb_layout);
+ 	free(c->xkb_variant);
+ 	free(c->xkb_options);
+diff --git a/src/compositor/config.h b/src/compositor/config.h
+index 35e314e..3c62ccd 100644
+--- a/src/compositor/config.h
++++ b/src/compositor/config.h
+@@ -164,6 +164,7 @@ struct q_theme {
+ 
+ 	char *font, *font_small;        /* owned */
+ 	char *bar_font;                 /* owned; bar text (clock, segments, pills) */
++	char *bar_clock;                /* owned; strftime format of the top-bar clock */
+ };
+ 
+ /* fixed workspace limit */
+@@ -171,9 +172,9 @@ struct q_theme {
+ 
+ /* bar_segment: a piece of bar text an outside script keeps in
+  * $XDG_RUNTIME_DIR/aro-bar/<name>, with an optional click command */
+-#define ARO_BAR_SEGS 12
++#define ARO_BAR_SEGS 24
+ enum { Q_BAR_TOP = 0, Q_BAR_BOTTOM = 1 };
+-enum { Q_SEG_LEFT = 0, Q_SEG_RIGHT = 1 };
++enum { Q_SEG_LEFT = 0, Q_SEG_RIGHT = 1, Q_SEG_CENTER = 2 };
+ struct q_bar_seg {
+ 	int bar, pos;
+ 	char name[32];
+diff --git a/src/ui/bar.c b/src/ui/bar.c
+index f4aa464..6ae80c3 100644
+--- a/src/ui/bar.c
++++ b/src/ui/bar.c
+@@ -378,14 +378,25 @@ void bar_update(struct aro_bar *b, struct aro_output *o)
+ 		if (s->cfg.bar_seg[i].bar == Q_BAR_TOP && s->cfg.bar_seg[i].pos == Q_SEG_LEFT)
+ 			left = seg_draw(b, i, left, false, mid);
+ 
+-	/* clock and date, centred */
+-	char when[48] = "--:--";
++	/* clock (format: bar_clock), then the top centre segments; the whole
++	 * group centred. Measure first (segments drawn at 0), then place. */
++	char when[96] = "--:--";
+ 	time_t now = time(NULL);
+ 	struct tm tm;
+-	if (localtime_r(&now, &tm))
+-		strftime(when, sizeof when, "%H:%M   %a %d %b", &tm);
++	if (localtime_r(&now, &tm) &&
++	    !strftime(when, sizeof when, th->bar_clock && *th->bar_clock ? th->bar_clock : "%H:%M", &tm))
++		snprintf(when, sizeof when, "--:--");
+ 	qtext_set(&b->clock, when, th->ink, b->scale, 0);
+-	qtext_move(&b->clock, (b->w - b->clock.w) / 2, mid - b->clock.h / 2);
++	int cw = 0;
++	for (int i = 0; i < s->cfg.nbar_seg; i++)
++		if (s->cfg.bar_seg[i].bar == Q_BAR_TOP && s->cfg.bar_seg[i].pos == Q_SEG_CENTER)
++			cw = seg_draw(b, i, cw, false, mid);
++	int cx = (b->w - (b->clock.w + (cw ? th->bar_pad * 2 + cw - th->bar_pad : 0))) / 2;
++	qtext_move(&b->clock, cx, mid - b->clock.h / 2);
++	cx += b->clock.w + th->bar_pad * 2;
++	for (int i = 0; i < s->cfg.nbar_seg; i++)
++		if (s->cfg.bar_seg[i].bar == Q_BAR_TOP && s->cfg.bar_seg[i].pos == Q_SEG_CENTER)
++			cx = seg_draw(b, i, cx, false, mid);
+ 
+ 	/* right edge: battery (laptops), then right segments, first one outermost */
+ 	int right = b->w - th->bar_pad;

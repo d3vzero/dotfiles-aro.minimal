@@ -1,0 +1,71 @@
+#!/bin/bash
+# aro-mpd -- MPD per akun (dijalankan dari `exec =` aro) + jembatan MPRIS.
+#   aro-mpd          tulis config, jalankan mpd + mpd-mpris, terapkan mode DAC
+#   aro-mpd config   tulis ulang ~/.config/mpd/mpd.conf (DAC dari aro-dac)
+#   aro-mpd restart  hentikan lalu jalankan ulang mpd (setelah ganti DAC)
+# Musik: $MUSIC_DIR (default ~/shared/Musics -> folder bersama, bisa diisi dari HP).
+# Output: "DAC" = ALSA hw langsung (bit-perfect: tanpa mixer/resample/konversi),
+#         "System" = PipeWire (lewat pulse). aro-dac memilih yang aktif.
+set -uo pipefail
+CFG="${XDG_CONFIG_HOME:-$HOME/.config}/mpd"
+ST="${XDG_STATE_HOME:-$HOME/.local/state}/mpd"
+MUSIC_DIR="${MUSIC_DIR:-$HOME/shared/Musics}"
+CARD=""
+# shellcheck disable=SC1091
+[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/aro-dac/state" ] && . "${XDG_CONFIG_HOME:-$HOME/.config}/aro-dac/state"
+
+config() {
+    mkdir -p "$CFG" "$ST/playlists"
+    {
+        echo "# ditulis aro-mpd -- jangan diedit (ditimpa saat DAC diganti)"
+        echo "music_directory    \"$MUSIC_DIR\""
+        echo "playlist_directory \"$ST/playlists\""
+        echo "db_file            \"$ST/database\""
+        echo "state_file         \"$ST/state\""
+        echo "sticker_file       \"$ST/sticker.sql\""
+        echo "log_file           \"$ST/log\""
+        echo "bind_to_address    \"127.0.0.1\""
+        echo "auto_update        \"yes\""
+        echo "restore_paused     \"yes\""
+        echo "replaygain         \"off\""
+        echo "volume_normalization \"no\""
+        if [ -n "${CARD:-}" ]; then
+            cat <<EOT
+audio_output {
+    type          "alsa"
+    name          "DAC"
+    device        "hw:CARD=$CARD,DEV=0"
+    mixer_type    "none"
+    auto_resample "no"
+    auto_channels "no"
+    auto_format   "no"
+    dop           "yes"
+}
+EOT
+        fi
+        cat <<'EOT'
+audio_output {
+    type          "pulse"
+    name          "System"
+}
+EOT
+    } > "$CFG/mpd.conf"
+}
+
+start() {
+    pgrep -u "$(id -u)" -x mpd >/dev/null || mpd "$CFG/mpd.conf"
+    for _ in $(seq 1 20); do mpc -q status >/dev/null 2>&1 && break; sleep 0.5; done
+    pgrep -u "$(id -u)" -x mpd-mpris >/dev/null || setsid -f mpd-mpris >/dev/null 2>&1
+    aro-dac restore
+    # status DAC di bar ikut berubah saat dicabut/dipasang
+    setsid -f bash -c 'exec 9>"$XDG_RUNTIME_DIR/aro-bar/.dac-watch.lock"; flock -n 9 || exit 0
+                       while sleep 10; do aro-dac text; done' >/dev/null 2>&1
+    [ "${MODE:-shared}" = bitperfect ] || mpc -q enable only System 2>/dev/null
+}
+
+case "${1:-run}" in
+    run)     config; start ;;
+    config)  config ;;
+    restart) config; mpd --kill "$CFG/mpd.conf" 2>/dev/null; sleep 1; start ;;
+    *) sed -n '2,8p' "$0"; exit 2 ;;
+esac

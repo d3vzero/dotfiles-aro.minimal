@@ -1,0 +1,238 @@
+#!/usr/bin/env python3
+"""aro-waktu -- tanggal Masehi + Hijriah dan waktu sholat untuk bar aro.
+
+  aro-waktu            (dari `exec =` aro) tulis segmen bar tiap 20 detik:
+                       masehi  "Selasa 28 Okt 2026"
+                       hijri   "16 Jumadil Awal 1448 H"
+                       sholat  "Ashar 14:58  −0:42"
+                       + notifikasi: menjelang & saat masuk waktu sholat, awal
+                       bulan Hijriah dan hari-hari besar Islam
+  aro-waktu jadwal     jadwal hari ini di fuzzel (klik segmen)
+  aro-waktu print      jadwal hari ini di terminal
+
+Lokasi: lat/lon dari config wallpaper (~/.config/qamariah-livepaper/config.ini),
+sama dengan cuaca; bisa ditimpa di ~/.config/aro-waktu.conf. Metode Kemenag RI:
+Subuh 20°, Isya 18°, Ashar Syafi'i (bayangan 1x), ihtiyat 2 menit, Imsak = Subuh
+- 10 menit. Semua dihitung offline. Hijriah: kalender tabular (hisab urfi); tanggal
+berganti saat Maghrib. Kalender resmi Indonesia (rukyat/MABIMS) bisa beda 1 hari ->
+hijri_offset di ~/.config/aro-waktu.conf.
+
+~/.config/aro-waktu.conf (semua opsional):
+  lat = -6.2
+  lon = 106.8
+  hijri_offset = 0          # -1 / 0 / +1
+  notify_before = 10        # menit pengingat sebelum waktu sholat (0 = mati)
+  notify = yes              # yes / no
+"""
+import configparser
+import datetime as dt
+import math
+import os
+import subprocess
+import sys
+import time
+
+HOME = os.path.expanduser("~")
+RUN = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
+SEG = os.path.join(RUN, "aro-bar")
+
+HARI = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"]
+BULAN = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
+HBULAN = ["Muharram", "Safar", "Rabiul Awal", "Rabiul Akhir", "Jumadil Awal", "Jumadil Akhir",
+          "Rajab", "Sya'ban", "Ramadhan", "Syawal", "Dzulqa'dah", "Dzulhijjah"]
+HARI_BESAR = {(1, 1): "Tahun Baru Islam", (1, 10): "Hari Asyura", (3, 12): "Maulid Nabi",
+              (7, 27): "Isra Mi'raj", (8, 15): "Nisfu Sya'ban", (9, 1): "Awal Ramadhan",
+              (9, 17): "Nuzulul Qur'an", (10, 1): "Idul Fitri", (12, 9): "Hari Arafah",
+              (12, 10): "Idul Adha"}
+SHOLAT = ["Imsak", "Subuh", "Terbit", "Dzuhur", "Ashar", "Maghrib", "Isya"]
+WAJIB = {"Subuh", "Dzuhur", "Ashar", "Maghrib", "Isya"}
+
+
+def config():
+    lat, lon = -6.2, 106.8
+    lp = configparser.ConfigParser()
+    lp.read(os.path.join(HOME, ".config/qamariah-livepaper/config.ini"))
+    if lp.has_section("livepaper"):
+        lat = lp.getfloat("livepaper", "lat", fallback=lat)
+        lon = lp.getfloat("livepaper", "lon", fallback=lon)
+    c = configparser.ConfigParser()
+    try:
+        with open(os.path.join(HOME, ".config/aro-waktu.conf")) as f:
+            c.read_string("[x]\n" + f.read())
+    except OSError:
+        c.read_string("[x]\n")
+    x = c["x"]
+    return {"lat": x.getfloat("lat", lat), "lon": x.getfloat("lon", lon),
+            "offset": x.getint("hijri_offset", 0), "before": x.getint("notify_before", 10),
+            "notify": x.getboolean("notify", True)}
+
+
+# ── waktu sholat (rumus astronomi standar) ───────────────────────────────────
+def _sun(jd):
+    d = jd - 2451545.0
+    g = math.radians((357.529 + 0.98560028 * d) % 360)
+    q = (280.459 + 0.98564736 * d) % 360
+    L = math.radians((q + 1.915 * math.sin(g) + 0.020 * math.sin(2 * g)) % 360)
+    e = math.radians(23.439 - 0.00000036 * d)
+    ra = math.degrees(math.atan2(math.cos(e) * math.sin(L), math.cos(L))) / 15
+    decl = math.asin(math.sin(e) * math.sin(L))
+    eqt = q / 15 - (ra % 24)
+    eqt = (eqt + 12) % 24 - 12
+    return decl, eqt
+
+
+def prayer_times(date, lat, lon, tz):
+    """jam lokal (float) untuk tiap waktu; tz dalam jam."""
+    jd = date.toordinal() + 1721424.5 - lon / 360
+    decl, eqt = _sun(jd + 0.5)
+    noon = 12 + tz - lon / 15 - eqt
+    phi = math.radians(lat)
+
+    def hour_angle(alt_deg):
+        c = (math.sin(math.radians(alt_deg)) - math.sin(phi) * math.sin(decl)) / (math.cos(phi) * math.cos(decl))
+        return math.degrees(math.acos(max(-1.0, min(1.0, c)))) / 15
+
+    asr_alt = math.degrees(math.atan(1 / (1 + math.tan(abs(phi - decl)))))
+    ih = 2 / 60
+    t = {"Subuh": noon - hour_angle(-20) + ih,
+         "Terbit": noon - hour_angle(-0.833) - ih,
+         "Dzuhur": noon + ih,
+         "Ashar": noon + hour_angle(asr_alt) + ih,
+         "Maghrib": noon + hour_angle(-0.833) + ih,
+         "Isya": noon + hour_angle(-18) + ih}
+    t["Imsak"] = t["Subuh"] - 10 / 60
+    out = {}
+    for k in SHOLAT:
+        m = int(round(t[k] * 60))
+        out[k] = dt.datetime.combine(date, dt.time(0)) + dt.timedelta(minutes=m)
+    return out
+
+
+# ── Hijriah tabular (hisab urfi) ─────────────────────────────────────────────
+def hijri(date):
+    jd = date.toordinal() + 1721425
+    l = jd - 1948440 + 10632
+    n = (l - 1) // 10631
+    l = l - 10631 * n + 354
+    j = ((10985 - l) // 5316) * ((50 * l) // 17719) + (l // 5670) * ((43 * l) // 15238)
+    l = l - ((30 - j) // 15) * ((17719 * j) // 50) - (j // 16) * ((15238 * j) // 43) + 29
+    m = (24 * l) // 709
+    d = l - (709 * m) // 24
+    y = 30 * n + j - 30
+    return y, m, d
+
+
+def hijri_now(now, maghrib, offset):
+    base = now.date() + dt.timedelta(days=offset + (1 if now >= maghrib else 0))
+    return hijri(base)
+
+
+def fmt_hm(t):
+    return t.strftime("%H:%M")
+
+
+def notify(title, body, urgency="normal"):
+    subprocess.run(["notify-send", "-a", "Waktu Sholat", "-u", urgency, title, body],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def put(name, text):
+    os.makedirs(SEG, exist_ok=True)
+    tmp = os.path.join(SEG, "." + name + ".tmp")
+    with open(tmp, "w") as f:
+        f.write(text + "\n")
+    os.replace(tmp, os.path.join(SEG, name))
+
+
+def schedule(now, cfg):
+    tz = now.astimezone().utcoffset().total_seconds() / 3600
+    today = prayer_times(now.date(), cfg["lat"], cfg["lon"], tz)
+    tomorrow = prayer_times(now.date() + dt.timedelta(days=1), cfg["lat"], cfg["lon"], tz)
+    return today, tomorrow
+
+
+def next_prayer(now, today, tomorrow):
+    for k in SHOLAT:
+        if k in WAJIB and today[k] > now:
+            return k, today[k]
+    return "Subuh", tomorrow["Subuh"]
+
+
+def lines(now, cfg):
+    today, tomorrow = schedule(now, cfg)
+    y, m, d = hijri_now(now, today["Maghrib"], cfg["offset"])
+    head = "%s %d %s %d  ·  %d %s %d H" % (HARI[now.weekday()], now.day, BULAN[now.month - 1], now.year,
+                                          d, HBULAN[m - 1], y)
+    nk, _ = next_prayer(now, today, tomorrow)
+    rows = []
+    for k in SHOLAT:
+        mark = "●" if k == nk and today[k] > now else " "
+        rows.append("%s %-8s %s" % (mark, k, fmt_hm(today[k])))
+    return head, rows
+
+
+def cmd_print():
+    cfg = config()
+    head, rows = lines(dt.datetime.now(), cfg)
+    print(head)
+    print("lokasi %.4f, %.4f (Kemenag)" % (cfg["lat"], cfg["lon"]))
+    for r in rows:
+        print(r)
+
+
+def cmd_jadwal():
+    cfg = config()
+    head, rows = lines(dt.datetime.now(), cfg)
+    subprocess.run(["fuzzel", "--dmenu", "--prompt", head + "  ❯ ", "--lines", str(len(rows)),
+                    "--width", "48"], input="\n".join(rows), text=True, stdout=subprocess.DEVNULL)
+
+
+def daemon():
+    import fcntl
+    os.makedirs(SEG, exist_ok=True)
+    lock = open(os.path.join(SEG, ".aro-waktu.lock"), "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return                                            # sudah berjalan
+    done = set()
+    while True:
+        cfg = config()
+        now = dt.datetime.now()
+        today, tomorrow = schedule(now, cfg)
+        y, m, d = hijri_now(now, today["Maghrib"], cfg["offset"])
+        put("masehi", "%s %d %s %d" % (HARI[now.weekday()], now.day, BULAN[now.month - 1], now.year))
+        put("hijri", "%d %s %d H" % (d, HBULAN[m - 1], y))
+        nk, nt = next_prayer(now, today, tomorrow)
+        left = int((nt - now).total_seconds() // 60) + 1
+        cd = "%d:%02d" % (left // 60, left % 60)
+        put("sholat", ("%s %s  −%s" % (nk, fmt_hm(nt), cd)) if left <= 180 else ("~%s %s" % (nk, fmt_hm(nt))))
+        if cfg["notify"]:
+            key = now.strftime("%F ")
+            for k in WAJIB:
+                t = today[k]
+                if cfg["before"] > 0 and dt.timedelta(0) < t - now <= dt.timedelta(minutes=cfg["before"]) \
+                        and key + k + "-pre" not in done:
+                    done.add(key + k + "-pre")
+                    notify("%s %s" % (k, fmt_hm(t)), "%d menit lagi" % cfg["before"])
+                if dt.timedelta(0) <= now - t < dt.timedelta(minutes=2) and key + k not in done:
+                    done.add(key + k)
+                    notify("Waktu %s" % k, "%s — selamat menunaikan ibadah sholat" % fmt_hm(t), "critical")
+            # awal bulan & hari besar: sekali, saat tanggal Hijriah berganti (Maghrib) atau saat login
+            hk = "hijri-%d-%d-%d" % (y, m, d)
+            if hk not in done:
+                done.add(hk)
+                ev = HARI_BESAR.get((m, d))
+                if ev:
+                    notify(ev, "%d %s %d H" % (d, HBULAN[m - 1], y))
+                elif d == 1:
+                    notify("1 %s %d H" % (HBULAN[m - 1], y), "Awal bulan Hijriah")
+        if len(done) > 200:
+            done = {x for x in done if x.startswith(now.strftime("%F"))}
+        time.sleep(20)
+
+
+if __name__ == "__main__":
+    arg = sys.argv[1] if len(sys.argv) > 1 else "daemon"
+    {"daemon": daemon, "jadwal": cmd_jadwal, "print": cmd_print}.get(arg, lambda: sys.exit(
+        "pakai: aro-waktu [jadwal|print]"))()

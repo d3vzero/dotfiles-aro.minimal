@@ -61,6 +61,7 @@ load_conf() {
     WHYD_REF="${WHYD_REF:-783e5c0}"
     LIVEPAPER="${LIVEPAPER:-no}"
     TAILSCALE="${TAILSCALE:-no}"
+    MUSIC_MPD="${MUSIC_MPD:-no}"
     SHARED_DIR="${SHARED_DIR:-}"
     SHARED_SUBDIRS="${SHARED_SUBDIRS:-Documents Downloads Musics Movies Pictures Project}"
     LIVEPAPER_REF="${LIVEPAPER_REF:-3d583f5}"
@@ -300,6 +301,7 @@ install_packages() {
     pkgs+=($(gpu_packages))
     case "$ENABLE_SSH" in yes|tailscale) pkgs+=(openssh openssh-dinit) ;; esac
     if [ "$TAILSCALE" = "yes" ]; then pkgs+=(tailscale); fi
+    if [ "$MUSIC_MPD" = "yes" ]; then pkgs+=(mpd mpc mpd-mpris); fi
     if [ "$ENABLE_BLUETOOTH" = "yes" ]; then pkgs+=(bluez bluez-utils bluez-dinit bluetui); fi
     if [ "$LOG_PERSIST" = "yes" ]; then pkgs+=(syslog-ng syslog-ng-dinit); fi
     if [ "$LOG_PERSIST" = "yes" ] && [ "$WHYD" = "yes" ]; then pkgs+=(go); fi   # build whyd-init
@@ -704,6 +706,11 @@ setup_public_home() {
         # segmen bar: nama perangkat Bluetooth, kiri jaringan; klik -> bluetui
         printf 'bar_segment = top right bt  kitty --class bluetui -e bluetui\n' >> "$AC"
     fi
+    # bawah kiri setelah MIC/SPK: DAC (MUSIC_MPD), lalu media MPRIS
+    if [ "$MUSIC_MPD" = "yes" ]; then
+        printf '\n# MPD + DAC (MUSIC_MPD): klik = DAC aktif, mode bit-perfect/bersama, Check…\nbar_segment = bottom left dac  aro-dac menu\nexec = aro-mpd\n' >> "$AC"
+    fi
+    printf '\n# media MPRIS (MPD, Sung, Firefox, mpv): klik = play/pause\nbar_segment = bottom left media  playerctl play-pause\n' >> "$AC"
     if [ "$LIVEPAPER" = "yes" ]; then
         printf '\n# live wallpaper (LIVEPAPER): langit, bulan, bintang, laut -- layer background\nexec = qamariah-livepaper\n' >> "$AC"
         printf 'bind = mod+w, spawn, qamariah-livepaper-menu\n' >> "$AC"   # scene, lokasi, kehalusan

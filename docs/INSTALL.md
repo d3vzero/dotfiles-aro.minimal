@@ -412,6 +412,22 @@ Subfolder dari `SHARED_SUBDIRS`, pintasan `~/shared` di tiap home. Akun baru: ja
 `update.sh` sekali (masuk grup `shared` + pintasan; berlaku setelah login ulang).
 `SHARED_FIX=1` menerapkan ulang izin ke seluruh isi (file yang disalin dengan izin lama).
 
+## 4n. Bar: waktu sholat, DAC, media
+
+Patch aro 0009: `bar_segment = top center …` (berderet setelah jam, semua di tengah) dan
+`bar_clock` (format jam). Tengah atas: jam · `Rabu 28 Okt 2026` · `17 Jumadil Awal 1448 H` ·
+`Ashar 14:53  −0:42` (`aro-waktu`; lokasi = lat/lon config wallpaper, metode Kemenag RI:
+Subuh 20°, Isya 18°, Ashar Syafi'i, ihtiyat 2 menit; Hijriah tabular berganti saat Maghrib,
+`hijri_offset` di `~/.config/aro-waktu.conf`). Notifikasi: 10 menit sebelum & saat masuk
+waktu, awal bulan Hijriah, hari besar. Klik = jadwal hari ini (fuzzel); `aro-waktu print`.
+
+`MUSIC_MPD="yes"`: MPD per akun (`aro-mpd`, musik di `~/shared/Musics`) + `mpd-mpris`.
+Segmen bawah kiri `DAC <nama>` (◆ = bit-perfect): klik → DAC aktif, **Bit-perfect** (kartu
+dilepas dari PipeWire, MPD langsung ke `hw:CARD=…` tanpa mixer/resample) atau **Bersama**
+(DAC jadi output PipeWire biasa, MPD lewat PipeWire), dan **Check…** (terminal: daftar kartu
++ format/rate USB, pilih DAC). Segmen `media` (MPRIS: MPD, Sung, Firefox, mpv), klik =
+play/pause. Setelah update yang membawa patch baru: `UPDATE_ARO=1 update.sh`.
+
 ## 5. Admin & update
 
 Admin login di tty lain: `Ctrl+Alt+F2` → login `Admin`.
