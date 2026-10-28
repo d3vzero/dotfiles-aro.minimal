@@ -18,7 +18,7 @@ osd() {       # osd TITLE BODY [percent]
 
 now_playing() {
     sleep 0.4
-    local t; t="$(playerctl metadata --format '{{artist}} — {{title}}' 2>/dev/null)"
+    local t; t="$(aro-player metadata --format '{{artist}} — {{title}}' 2>/dev/null)"
     [ -n "$t" ] && osd "$1" "$t"
 }
 
@@ -34,11 +34,11 @@ volume_osd() {   # volume_osd [@DEFAULT_AUDIO_SINK@|@DEFAULT_AUDIO_SOURCE@] [tit
 }
 
 case "${1:-}" in
-    play) playerctl play-pause 2>/dev/null || osd "Media" "No player running"
-          now_playing "$(playerctl status 2>/dev/null || echo Media)" ;;
-    next) playerctl next 2>/dev/null && now_playing "Next" ;;
-    prev) playerctl previous 2>/dev/null && now_playing "Previous" ;;
-    stop) playerctl stop 2>/dev/null && osd "Media" "Stopped" ;;
+    play) aro-player play-pause 2>/dev/null || osd "Media" "No player running"
+          now_playing "$(aro-player status 2>/dev/null || echo Media)" ;;
+    next) aro-player next 2>/dev/null && now_playing "Next" ;;
+    prev) aro-player previous 2>/dev/null && now_playing "Previous" ;;
+    stop) aro-player stop 2>/dev/null && osd "Media" "Stopped" ;;
     up)   wpctl set-mute @DEFAULT_AUDIO_SINK@ 0
           wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+ && volume_osd ;;
     down) wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%- && volume_osd ;;

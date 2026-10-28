@@ -1,0 +1,10 @@
+#!/bin/bash
+# aro-player ARGS -- playerctl ke pemutar yang TERAKHIR AKTIF.
+# Tanpa ini playerctl memilih pemutar pertama di daftar MPRIS: sejak MPD
+# (mpd-mpris) selalu berjalan, tombol media jatuh ke MPD yang diam, padahal
+# yang sedang diputar Sung/Firefox. playerctld (exec di config aro) mencatat
+# pemutar yang terakhir berubah status; kalau belum jalan, playerctl biasa.
+if playerctl -l 2>/dev/null | grep -qx playerctld; then
+    exec playerctl -p playerctld "$@"
+fi
+exec playerctl "$@"

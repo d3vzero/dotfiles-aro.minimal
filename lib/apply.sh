@@ -712,7 +712,7 @@ setup_public_home() {
     if [ "$MUSIC_MPD" = "yes" ]; then
         printf '\n# MPD + DAC (MUSIC_MPD): klik = DAC aktif, mode bit-perfect/bersama, Check…\nbar_segment = bottom left dac  aro-dac menu\nexec = aro-mpd\n' >> "$AC"
     fi
-    printf '\n# media MPRIS (MPD, Sung, Firefox, mpv): klik = play/pause\nbar_segment = bottom left media  playerctl play-pause\n' >> "$AC"
+    printf '\n# media MPRIS (MPD, Sung, Firefox, mpv): klik = play/pause\nbar_segment = bottom left media  aro-player play-pause\n' >> "$AC"
     if [ "$LIVEPAPER" = "yes" ]; then
         printf '\n# live wallpaper (LIVEPAPER): langit, bulan, bintang, laut -- layer background\nexec = qamariah-livepaper\n' >> "$AC"
         printf 'bind = mod+w, spawn, qamariah-livepaper-menu\n' >> "$AC"   # scene, lokasi, kehalusan
