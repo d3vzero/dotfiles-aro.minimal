@@ -1,12 +1,33 @@
 #!/bin/sh
-# powermenu — Ctrl+Alt+Del; peringatan kalau training/GPU sedang dipakai
-jobs=0; gpu=0
+# powermenu — Ctrl+Alt+Del. Peringatan hanya untuk pekerjaan GPU yang berarti:
+#   - job training (train-run), atau proses komputasi GPU lain yang tidak dikenal
+#     (mis. skrip python yang dijalankan manual)
+#   - LLM lokal (llama-server): disebut di pilihan, tanpa peringatan keras
+# Pemutar/encoder (mpv, ffmpeg, OBS, Firefox, Sung) memakai GPU untuk decode/encode
+# video/audio dan ikut muncul di nvidia-smi -- itu BUKAN training, diabaikan.
+jobs=0; heavy=""; llm=""
 command -v train-run >/dev/null && jobs=$(train-run count 2>/dev/null || echo 0)
-command -v nvidia-smi >/dev/null &&
-    gpu=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | grep -c .)
-if [ "$jobs" -gt 0 ] || [ "$gpu" -gt 0 ]; then
-    sel=$(printf 'Batal\nShutdown (training akan berhenti)\nReboot (training akan berhenti)\n' |
-          fuzzel --dmenu --prompt "⚠ Training/GPU sedang berjalan ($jobs job, $gpu proses GPU): ")
+pgrep -x llama-server >/dev/null 2>&1 && llm="yes"
+if command -v nvidia-smi >/dev/null; then
+    heavy=$(nvidia-smi --query-compute-apps=pid,process_name --format=csv,noheader 2>/dev/null |
+        while IFS=, read -r pid name; do
+            name=$(basename "$(echo "$name" | sed 's/^ *//')")
+            case "$name" in
+                mpv|ffmpeg|ffprobe|obs|firefox*|sung*|Sung*|llama-server|Xwayland|aro|kitty) ;;
+                *) printf '%s ' "$name" ;;
+            esac
+        done)
+fi
+heavy=$(echo "$heavy" | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/ *$//')
+if [ "$jobs" -gt 0 ] || [ -n "$heavy" ]; then
+    what=""
+    [ "$jobs" -gt 0 ] && what="$jobs job training"
+    [ -n "$heavy" ] && what="${what:+$what, }GPU: $heavy"
+    sel=$(printf 'Batal\nShutdown (pekerjaan GPU akan berhenti)\nReboot (pekerjaan GPU akan berhenti)\n' |
+          fuzzel --dmenu --prompt "⚠ Sedang berjalan ($what): ")
+elif [ -n "$llm" ]; then
+    sel=$(printf 'Shutdown (LLM lokal ikut berhenti)\nReboot (LLM lokal ikut berhenti)\n' |
+          fuzzel --dmenu --prompt 'Power: ')
 else
     sel=$(printf 'Shutdown\nReboot\n' | fuzzel --dmenu --prompt 'Power: ')
 fi
