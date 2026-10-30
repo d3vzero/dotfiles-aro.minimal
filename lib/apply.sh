@@ -64,7 +64,7 @@ load_conf() {
     MUSIC_MPD="${MUSIC_MPD:-no}"
     SHARED_DIR="${SHARED_DIR:-}"
     SHARED_SUBDIRS="${SHARED_SUBDIRS:-Documents Downloads Musics Movies Pictures Project}"
-    LIVEPAPER_REF="${LIVEPAPER_REF:-3d583f5}"
+    LIVEPAPER_REF="${LIVEPAPER_REF:-d849f64}"
 
     case "$CPU" in amd|intel) ;; *) die "CPU='$CPU' tidak valid (amd | intel)" ;; esac
     case "$GPU" in amd|nvidia|intel|vm) ;; *) die "GPU='$GPU' tidak valid (amd | nvidia | intel | vm)" ;; esac
