@@ -33,11 +33,39 @@ volume_osd() {   # volume_osd [@DEFAULT_AUDIO_SINK@|@DEFAULT_AUDIO_SOURCE@] [tit
     aro-bar-refresh audio 2>/dev/null || true       # bar now, not on the next tick
 }
 
+# Tombol media ke MPD kalau tidak ada pemutar lain (Sung, Firefox, mpv) yang sedang
+# memutar/jeda. Antrean MPD kosong -> isi seluruh perpustakaan (acak), lalu putar.
+use_mpd() {
+    command -v mpc >/dev/null && mpc -q status >/dev/null 2>&1 || return 1
+    ! playerctl -a -f '{{playerName}} {{status}}' status 2>/dev/null |
+        grep -v '^mpd' | grep -qE ' (Playing|Paused)$'
+}
+mpd_ready() {
+    [ -n "$(mpc playlist 2>/dev/null | head -n1)" ] && return 0
+    mpc -q add / 2>/dev/null; mpc -q random on 2>/dev/null; mpc -q repeat on 2>/dev/null
+    [ -n "$(mpc playlist 2>/dev/null | head -n1)" ] || { osd "Musik" "Perpustakaan kosong (~/shared/Musics)"; return 1; }
+}
+
 case "${1:-}" in
-    play) aro-player play-pause 2>/dev/null || osd "Media" "No player running"
-          now_playing "$(aro-player status 2>/dev/null || echo Media)" ;;
-    next) aro-player next 2>/dev/null && now_playing "Next" ;;
-    prev) aro-player previous 2>/dev/null && now_playing "Previous" ;;
+    play|next|prev)
+        if use_mpd; then
+            mpd_ready || exit 0
+            case "$1" in
+                play) mpc -q toggle ;;
+                next) mpc -q next 2>/dev/null
+                      mpc 2>/dev/null | grep -q '^\[playing\]' || mpc -q play ;;   # dari berhenti: putar
+                prev) mpc -q prev 2>/dev/null
+                      mpc 2>/dev/null | grep -q '^\[playing\]' || mpc -q play ;;
+            esac
+            now_playing "MPD"
+            exit 0
+        fi
+        case "$1" in
+            play) aro-player play-pause 2>/dev/null || osd "Media" "No player running"
+                  now_playing "$(aro-player status 2>/dev/null || echo Media)" ;;
+            next) aro-player next 2>/dev/null && now_playing "Next" ;;
+            prev) aro-player previous 2>/dev/null && now_playing "Previous" ;;
+        esac ;;
     stop) aro-player stop 2>/dev/null && osd "Media" "Stopped" ;;
     up)   wpctl set-mute @DEFAULT_AUDIO_SINK@ 0
           wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+ && volume_osd ;;

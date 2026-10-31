@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Putar musik
+Comment=Putar lewat MPD (perpustakaan ~/shared/Musics) atau mpv untuk file lain
+Exec=aro-play %f
+Icon=audio-x-generic
+Terminal=false
+Type=Application
+NoDisplay=true
+MimeType=audio/mpeg;audio/flac;audio/x-flac;audio/ogg;audio/wav;audio/x-wav;audio/mp4;audio/aac;audio/opus;audio/x-m4a;audio/webm;audio/x-dsf;audio/x-dff;

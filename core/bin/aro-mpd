@@ -3,13 +3,14 @@
 #   aro-mpd          tulis config, jalankan mpd + mpd-mpris, terapkan mode DAC
 #   aro-mpd config   tulis ulang ~/.config/mpd/mpd.conf (DAC dari aro-dac)
 #   aro-mpd restart  hentikan lalu jalankan ulang mpd (setelah ganti DAC)
+#   aro-mpd queue    scan perpustakaan; antrean kosong -> isi semua lagu (acak, ulang)
 # Musik: $MUSIC_DIR (default ~/shared/Musics -> folder bersama, bisa diisi dari HP).
 # Output: "DAC" = ALSA hw langsung (bit-perfect: tanpa mixer/resample/konversi),
 #         "System" = PipeWire (lewat pulse). aro-dac memilih yang aktif.
 set -uo pipefail
 CFG="${XDG_CONFIG_HOME:-$HOME/.config}/mpd"
 ST="${XDG_STATE_HOME:-$HOME/.local/state}/mpd"
-MUSIC_DIR="${MUSIC_DIR:-$HOME/shared/Musics}"
+MUSIC_DIR="$(readlink -f "${MUSIC_DIR:-$HOME/shared/Musics}" 2>/dev/null || echo "$HOME/shared/Musics")"
 CARD=""
 # shellcheck disable=SC1091
 [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/aro-dac/state" ] && . "${XDG_CONFIG_HOME:-$HOME/.config}/aro-dac/state"
@@ -61,10 +62,22 @@ start() {
     setsid -f bash -c 'exec 9>"$XDG_RUNTIME_DIR/aro-bar/.dac-watch.lock"; flock -n 9 || exit 0
                        while sleep 10; do aro-dac text; done' >/dev/null 2>&1
     [ "${MODE:-shared}" = bitperfect ] || mpc -q enable only System 2>/dev/null
+    # perpustakaan selalu terbaru (lagu baru juga terdeteksi sendiri: auto_update)
+    # dan antrean siap: semua lagu, acak + ulang -> Fn+P langsung memutar
+    mpc -q random on 2>/dev/null; mpc -q repeat on 2>/dev/null
+    setsid -f aro-mpd queue >/dev/null 2>&1
+}
+
+# antrean = seluruh perpustakaan (setelah scan selesai), hanya kalau antrean kosong
+queue() {
+    mpc -q update --wait 2>/dev/null
+    [ -n "$(mpc playlist 2>/dev/null | head -n1)" ] && return 0
+    mpc -q add / 2>/dev/null
 }
 
 case "${1:-run}" in
     run)     config; start ;;
+    queue)   queue ;;
     config)  config ;;
     restart) config; mpd --kill "$CFG/mpd.conf" 2>/dev/null; sleep 1; start ;;
     *) sed -n '2,8p' "$0"; exit 2 ;;

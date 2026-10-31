@@ -1,0 +1,31 @@
+#!/bin/bash
+# aro-play FILE... -- buka file audio (dari superfile, browser file, xdg-open).
+# File di dalam perpustakaan MPD (~/shared/Musics): diputar lewat MPD -- lagu yang
+# dipilih diputar dulu, lalu berlanjut acak dari seluruh perpustakaan. Tombol media
+# (Fn+P/[/]), segmen bar, dan DAC bit-perfect ikut terpakai.
+# File di luar perpustakaan, atau MPD tidak berjalan: dibuka dengan mpv seperti biasa.
+f="${1:-}"
+[ -n "$f" ] || exit 2
+f="${f#file://}"
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}/mpd/mpd.conf"
+music="$(sed -n 's/^music_directory *"\(.*\)"/\1/p' "$CONF" 2>/dev/null | head -n1)"
+real="$(readlink -f "$f" 2>/dev/null)"
+if [ -n "$music" ] && [ -n "$real" ] && command -v mpc >/dev/null &&
+   mpc -q status >/dev/null 2>&1; then
+    music="$(readlink -f "$music")"
+    case "$real" in
+    "$music"/*)
+        rel="${real#"$music"/}"
+        mpc -q update --wait "$(dirname "$rel")" 2>/dev/null   # lagu yang baru disalin
+        mpc -q clear
+        mpc -q add / 2>/dev/null
+        mpc -q random on; mpc -q repeat on
+        n="$(mpc -f '%file%' playlist | grep -nxF -- "$rel" | head -n1 | cut -d: -f1)"
+        if [ -n "$n" ]; then
+            mpc -q play "$n"
+            notify-send -a Media -t 2500 "MPD" "$(mpc -f '[%artist% — ]%title%|%file%' current)" 2>/dev/null
+            exit 0
+        fi ;;
+    esac
+fi
+exec mpv --force-window=yes "$@"
