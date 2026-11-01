@@ -7,7 +7,7 @@
 set -u
 SEG="${XDG_RUNTIME_DIR:?}/aro-bar"; mkdir -p "$SEG"
 exec 9>"$SEG/.aro-media.lock"; flock -n 9 || exit 0
-MAX="${ARO_MEDIA_MAX:-48}"
+MAX="${ARO_MEDIA_MAX:-32}"    # pendek: bar bawah kiri juga memuat DAC, folder, shuffle
 put() { printf '%s\n' "$1" > "$SEG/.media.tmp" && mv -f "$SEG/.media.tmp" "$SEG/media"; }
 trap 'rm -f "$SEG/media"' EXIT
 sleep 2                  # beri waktu playerctld (exec sebelumnya) mendaftar dulu

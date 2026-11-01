@@ -1,7 +1,8 @@
 #!/bin/bash
 # aro-play FILE... -- buka file audio (dari superfile, browser file, xdg-open).
 # File di dalam perpustakaan MPD (~/shared/Musics): diputar lewat MPD -- lagu yang
-# dipilih diputar dulu, lalu berlanjut acak dari seluruh perpustakaan. Tombol media
+# dipilih diputar dulu, lalu berlanjut dari folder aktif (aro-music) atau seluruh
+# perpustakaan, acak kalau SHUFFLE ON. Tombol media
 # (Fn+P/[/]), segmen bar, dan DAC bit-perfect ikut terpakai.
 # File di luar perpustakaan, atau MPD tidak berjalan: dibuka dengan mpv seperti biasa.
 f="${1:-}"
@@ -17,9 +18,11 @@ if [ -n "$music" ] && [ -n "$real" ] && command -v mpc >/dev/null &&
     "$music"/*)
         rel="${real#"$music"/}"
         mpc -q update --wait "$(dirname "$rel")" 2>/dev/null   # lagu yang baru disalin
+        # antrean: folder aktif kalau lagu ada di dalamnya, selain itu semua lagu
+        act="$(aro-music folder 2>/dev/null)"
+        case "$rel" in "$act"/*) ;; *) act=""; : > "${XDG_STATE_HOME:-$HOME/.local/state}/aro-music/folder" 2>/dev/null ;; esac
         mpc -q clear
-        mpc -q add / 2>/dev/null
-        mpc -q random on; mpc -q repeat on
+        if [ -n "$act" ]; then mpc -q add "$act" 2>/dev/null; else mpc -q add / 2>/dev/null; fi
         n="$(mpc -f '%file%' playlist | grep -nxF -- "$rel" | head -n1 | cut -d: -f1)"
         if [ -n "$n" ]; then
             mpc -q play "$n"

@@ -1,0 +1,49 @@
+diff --git a/src/ui/bar.c b/src/ui/bar.c
+index 4de21b9..20764b5 100644
+--- a/src/ui/bar.c
++++ b/src/ui/bar.c
+@@ -485,25 +485,32 @@ void bar_update(struct aro_bar *b, struct aro_output *o)
+ 		}
+ 		b->napp = n;
+ 
+-		/* centre "apps  pills" as one group: open windows left of the workspaces */
++		/* workspaces centred on their own (they stay put when windows open
++		 * or close); open windows to their right, those that would run into
++		 * the bottom right segments hidden */
+ 		int pills_w = cursor > th->bar_pad ? cursor - th->bar_pad - PILL_GAP : 0;
+-		int group = total + (n ? th->bar_pad * 2 : 0) + pills_w;
+-		int gx = (b->w - group) / 2;
+-		if (gx < th->bar_pad)
+-			gx = th->bar_pad;
+-		int ax = gx;
+-		for (int i = 0; i < n; i++) {
+-			b->app[i].x = ax;
+-			qtext_move(&b->app[i].text, ax, mid - b->app[i].text.h / 2);
+-			ax += b->app[i].w + th->bar_pad;
+-		}
+-		int shift = (n ? ax + th->bar_pad : gx) - th->bar_pad;
++		(void)total;
++		int gx = (b->w - pills_w) / 2;
++		if (gx < bleft)
++			gx = bleft;
++		int shift = gx - th->bar_pad;
+ 		for (int i = 0; i < b->shown && i < b->nws; i++) {
+ 			b->ws[i].x += shift;
+ 			wlr_scene_node_set_position(&b->ws[i].pill->node, b->ws[i].x, mid - PILL_H / 2);
+ 			qtext_move(&b->ws[i].label, b->ws[i].x + PILL_PAD,
+ 			           mid - b->ws[i].label.h / 2);
+ 		}
++		int ax = gx + pills_w + (pills_w ? th->bar_pad * 2 : 0);
++		for (int i = 0; i < n; i++) {
++			if (ax + b->app[i].w > bright_x - th->bar_pad) {
++				qtext_show(&b->app[i].text, false);
++				b->app[i].w = 0;
++				continue;
++			}
++			b->app[i].x = ax;
++			qtext_move(&b->app[i].text, ax, mid - b->app[i].text.h / 2);
++			ax += b->app[i].w + th->bar_pad;
++		}
+ 	}
+ 
+ 	/* the window title has no room left in this layout (the bottom bar

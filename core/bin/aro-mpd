@@ -63,16 +63,22 @@ start() {
                        while sleep 10; do aro-dac text; done' >/dev/null 2>&1
     [ "${MODE:-shared}" = bitperfect ] || mpc -q enable only System 2>/dev/null
     # perpustakaan selalu terbaru (lagu baru juga terdeteksi sendiri: auto_update)
-    # dan antrean siap: semua lagu, acak + ulang -> Fn+P langsung memutar
-    mpc -q random on 2>/dev/null; mpc -q repeat on 2>/dev/null
+    # dan antrean siap: folder aktif (bawaan semua lagu), acak + ulang -> Fn+P langsung memutar
+    # bawaan sekali saja (pilihan SHUFFLE berikutnya disimpan MPD sendiri)
+    local init="${XDG_STATE_HOME:-$HOME/.local/state}/aro-music/.init"
+    if [ ! -e "$init" ]; then
+        mpc -q random on 2>/dev/null; mpc -q repeat on 2>/dev/null
+        mkdir -p "${init%/*}" && touch "$init"
+    fi
     setsid -f aro-mpd queue >/dev/null 2>&1
+    setsid -f aro-music watch >/dev/null 2>&1
 }
 
 # antrean = seluruh perpustakaan (setelah scan selesai), hanya kalau antrean kosong
 queue() {
     mpc -q update --wait 2>/dev/null
     [ -n "$(mpc playlist 2>/dev/null | head -n1)" ] && return 0
-    mpc -q add / 2>/dev/null
+    aro-music fill
 }
 
 case "${1:-run}" in

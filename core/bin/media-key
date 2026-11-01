@@ -42,7 +42,7 @@ use_mpd() {
 }
 mpd_ready() {
     [ -n "$(mpc playlist 2>/dev/null | head -n1)" ] && return 0
-    mpc -q add / 2>/dev/null; mpc -q random on 2>/dev/null; mpc -q repeat on 2>/dev/null
+    aro-music fill
     [ -n "$(mpc playlist 2>/dev/null | head -n1)" ] || { osd "Musik" "Perpustakaan kosong (~/shared/Musics)"; return 1; }
 }
 
