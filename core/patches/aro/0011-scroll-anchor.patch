@@ -1,3 +1,26 @@
+diff --git a/src/compositor/actions.c b/src/compositor/actions.c
+index 718f4ec..e2110db 100644
+--- a/src/compositor/actions.c
++++ b/src/compositor/actions.c
+@@ -397,6 +397,8 @@ void run_action(struct aro_server *s, const struct q_bind *b)
+ 		ly_node *target = ly_focus(o->ws[o->cur_ws], f->node, e);
+ 		if (target && target->user) {
+ 			view_swap(f, target->user);
++			if (scroll && s->cfg.scroll_anchor)
++				f->scroll_seen = false;     /* re-centre it at 1/2 */
+ 			aro_arrange(s);
+ 		} else {
+ 			/* move across outputs if possible */
+@@ -411,6 +413,9 @@ void run_action(struct aro_server *s, const struct q_bind *b)
+ 	ly_node *next = mono ? monocle_step(o->ws[o->cur_ws], f->node, e)
+ 	                     : ly_focus(o->ws[o->cur_ws], f->node, e);
+ 	if (next) {
++		/* scroll_anchor: keyboard focus re-centres (a mouse click does not) */
++		if (scroll && s->cfg.scroll_anchor && next->user)
++			((struct aro_view *)next->user)->scroll_seen = false;
+ 		aro_focus(s, next->user);
+ 		cursor_warp_to_view(s, next->user);
+ 		return;
 diff --git a/src/compositor/aro.h b/src/compositor/aro.h
 index c266f3b..9ec1554 100644
 --- a/src/compositor/aro.h
@@ -11,7 +34,7 @@ index c266f3b..9ec1554 100644
  	bool fullscreen;
  	/* fullscreen chosen by the user (Super+F) or a rule: the client may not
 diff --git a/src/compositor/arrange.c b/src/compositor/arrange.c
-index 21b4458..fe0e250 100644
+index 21b4458..bb108f0 100644
 --- a/src/compositor/arrange.c
 +++ b/src/compositor/arrange.c
 @@ -114,6 +114,9 @@ static void scroll_place(struct aro_server *s, struct aro_output *o, int ws)
@@ -37,20 +60,27 @@ index 21b4458..fe0e250 100644
  		}
  		w[i] = (int)((share > 0 ? share : s->cfg.scroll_width) * view.w + 0.5);
  		if (w[i] < s->cfg.theme.min)
-@@ -134,11 +140,35 @@ static void scroll_place(struct aro_server *s, struct aro_output *o, int ws)
+@@ -134,11 +140,42 @@ static void scroll_place(struct aro_server *s, struct aro_output *o, int ws)
  		x[i] = end;
  		end += w[i] + gap;
  	}
-+	/* scroll_anchor, new window: the column before it shrinks to fill the left
-+	 * quarter exactly, then the widths are measured again */
-+	if (pass == 0 && fresh && f > 0) {
++	/* scroll_anchor, a column (re)taking the centre (new window, or moved or
++	 * focused with the keyboard): it goes back to the default width (1/2), its
++	 * neighbours shrink to fill the left and right quarters exactly, then the
++	 * widths are measured again */
++	if (pass == 0 && fresh) {
 +		double q = (view.w * 0.25 - gap) / view.w;
-+		ly_node *leaves[256];
-+		int nl = ly_collect(cols[f - 1], leaves, 256);
-+		for (int k = 0; k < nl; k++) {
-+			struct aro_view *v = leaves[k]->user;
-+			if (v)
-+				v->scroll_w = q > 0.05 ? q : 0.05;
++		q = q > 0.05 ? q : 0.05;
++		for (int c = f - 1; c <= f + 1; c++) {
++			if (c < 0 || c >= n)
++				continue;
++			ly_node *leaves[256];
++			int nl = ly_collect(cols[c], leaves, 256);
++			for (int k = 0; k < nl; k++) {
++				struct aro_view *v = leaves[k]->user;
++				if (v)
++					v->scroll_w = c == f ? 0 : q;
++			}
 +		}
 +		continue;
 +	}
@@ -74,7 +104,7 @@ index 21b4458..fe0e250 100644
  		/* scroll_center: the focused column sits in the middle of the screen,
  		 * even the first or last one (so no clamping below) */
  		off = x[f] + w[f] / 2.0 - view.w / 2.0;
-@@ -154,9 +184,13 @@ static void scroll_place(struct aro_server *s, struct aro_output *o, int ws)
+@@ -154,9 +191,13 @@ static void scroll_place(struct aro_server *s, struct aro_output *o, int ws)
  			off = x[f] - left;      /* last: a wide column shows its left edge */
  	}
  	double max = total > view.w ? total - view.w : 0;
