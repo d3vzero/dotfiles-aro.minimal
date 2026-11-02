@@ -1,0 +1,125 @@
+diff --git a/src/compositor/aro.h b/src/compositor/aro.h
+index c266f3b..9ec1554 100644
+--- a/src/compositor/aro.h
++++ b/src/compositor/aro.h
+@@ -117,6 +117,7 @@ struct aro_view {
+ 	double rule_opacity[2]; /* focused, unfocused; 0: the config's */
+ 	struct wlr_scene_blur *blur;    /* behind it when see-through; effects only */
+ 	double scroll_w;        /* layout = scroll: this column's width share; 0 = the default */
++	bool scroll_seen;       /* scroll_anchor: placed once already (new windows are not) */
+ 	double scroll_w_prev;   /* what maximize goes back to */
+ 	bool fullscreen;
+ 	/* fullscreen chosen by the user (Super+F) or a rule: the client may not
+diff --git a/src/compositor/arrange.c b/src/compositor/arrange.c
+index 21b4458..fe0e250 100644
+--- a/src/compositor/arrange.c
++++ b/src/compositor/arrange.c
+@@ -114,6 +114,9 @@ static void scroll_place(struct aro_server *s, struct aro_output *o, int ws)
+ 		return;
+ 
+ 	int x[256], w[256], f = -1, end = 0;
++	bool fresh = false;              /* scroll_anchor: the focused window is new */
++	for (int pass = 0; pass < 2; pass++) {
++	f = -1; end = 0;
+ 	for (int i = 0; i < n; i++) {
+ 		/* a column is as wide as its widest window asked to be */
+ 		ly_node *leaves[256];
+@@ -123,8 +126,11 @@ static void scroll_place(struct aro_server *s, struct aro_output *o, int ws)
+ 			struct aro_view *v = leaves[k]->user;
+ 			if (v && v->scroll_w > share)
+ 				share = v->scroll_w;
+-			if (v && v == s->focused)
++			if (v && v == s->focused) {
+ 				f = i;
++				if (pass == 0 && s->cfg.scroll_anchor && !v->scroll_seen)
++					fresh = true;
++			}
+ 		}
+ 		w[i] = (int)((share > 0 ? share : s->cfg.scroll_width) * view.w + 0.5);
+ 		if (w[i] < s->cfg.theme.min)
+@@ -134,11 +140,35 @@ static void scroll_place(struct aro_server *s, struct aro_output *o, int ws)
+ 		x[i] = end;
+ 		end += w[i] + gap;
+ 	}
++	/* scroll_anchor, new window: the column before it shrinks to fill the left
++	 * quarter exactly, then the widths are measured again */
++	if (pass == 0 && fresh && f > 0) {
++		double q = (view.w * 0.25 - gap) / view.w;
++		ly_node *leaves[256];
++		int nl = ly_collect(cols[f - 1], leaves, 256);
++		for (int k = 0; k < nl; k++) {
++			struct aro_view *v = leaves[k]->user;
++			if (v)
++				v->scroll_w = q > 0.05 ? q : 0.05;
++		}
++		continue;
++	}
++	break;
++	}
+ 	const int total = end - gap;
+ 
+ 	/* move just enough to show the focused column, its neighbours peeking in */
+ 	double off = o->scroll[ws];
+-	if (f >= 0 && s->cfg.scroll_center) {
++	if (f >= 0 && s->cfg.scroll_anchor) {
++		/* new window: centred. Otherwise move only when the focused column
++		 * is not fully on screen (clicking a visible window never scrolls) */
++		if (fresh)
++			off = x[f] + w[f] / 2.0 - view.w / 2.0;
++		else if (x[f] < off)
++			off = x[f];
++		else if (x[f] + w[f] > off + view.w)
++			off = x[f] + w[f] - view.w;
++	} else if (f >= 0 && s->cfg.scroll_center) {
+ 		/* scroll_center: the focused column sits in the middle of the screen,
+ 		 * even the first or last one (so no clamping below) */
+ 		off = x[f] + w[f] / 2.0 - view.w / 2.0;
+@@ -154,9 +184,13 @@ static void scroll_place(struct aro_server *s, struct aro_output *o, int ws)
+ 			off = x[f] - left;      /* last: a wide column shows its left edge */
+ 	}
+ 	double max = total > view.w ? total - view.w : 0;
+-	if (!(s->cfg.scroll_center && f >= 0))
++	if (!((s->cfg.scroll_center || s->cfg.scroll_anchor) && f >= 0))
+ 		off = off > max ? max : off < 0 ? 0 : off;
+ 	o->scroll[ws] = off;
++	/* only the focused window counts as placed: a new window is laid out
++	 * once before it takes focus (tree_insert), and must still be "new" then */
++	if (s->cfg.scroll_anchor && f >= 0 && s->focused)
++		s->focused->scroll_seen = true;
+ 
+ 	for (int i = 0; i < n; i++)
+ 		scroll_stack(cols[i], (ly_box){ view.x + x[i] - (int)off, view.y, w[i], view.h }, gap);
+diff --git a/src/compositor/config.c b/src/compositor/config.c
+index f2c2f67..d94bdcb 100644
+--- a/src/compositor/config.c
++++ b/src/compositor/config.c
+@@ -430,6 +430,7 @@ void config_defaults(struct aro_config *c)
+ 	c->scroll_width = 0.5;
+ 	c->scroll_peek = 40;
+ 	c->scroll_center = false;
++	c->scroll_anchor = false;
+ 	c->scroll_presets[0] = 1.0 / 3;
+ 	c->scroll_presets[1] = 0.5;
+ 	c->scroll_presets[2] = 2.0 / 3;
+@@ -1470,6 +1471,8 @@ bool config_load(struct aro_config *c, const char *path)
+ 			}
+ 		} else if (!strcasecmp(key, "scroll_center")) {
+ 			ok = parse_bool(value, &c->scroll_center);
++		} else if (!strcasecmp(key, "scroll_anchor")) {
++			ok = parse_bool(value, &c->scroll_anchor);
+ 		} else if (!strcasecmp(key, "scroll_peek")) {
+ 			int n;
+ 			ok = parse_int(value, &n) && n >= 0 && n <= 400;
+diff --git a/src/compositor/config.h b/src/compositor/config.h
+index 3c62ccd..7aab5d1 100644
+--- a/src/compositor/config.h
++++ b/src/compositor/config.h
+@@ -222,6 +222,8 @@ struct aro_config {
+ 	double scroll_width;    /* a new column's width, as a share of the screen */
+ 	int scroll_peek;        /* pixels of the neighbouring columns left showing */
+ 	bool scroll_center;     /* keep the focused column in the middle of the screen */
++	bool scroll_anchor;     /* new column: centred, previous one shrinks to the left quarter;
++	                         * focus changes do not scroll while the column is visible */
+ 	double scroll_presets[8];       /* what the width action steps through, ascending */
+ 	int nscroll_presets;
+ 	double tp_speed;        /* -1..1 */
