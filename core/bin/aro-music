@@ -3,6 +3,8 @@
 #   aro-music folder-menu     fuzzel: "Semua lagu" + semua folder di perpustakaan;
 #                             pilih -> antrean = isi folder itu, langsung diputar
 #   aro-music shuffle-toggle  SHUFFLE ON/OFF (mpc random)
+#   aro-music repeat-toggle   REPEAT ON/OFF: ulangi SATU lagu yang sedang diputar (mpc single +
+#                             repeat); OFF = lanjut ke lagu berikutnya seperti biasa
 #   aro-music text            tulis segmen "folder" dan "shuffle"
 #   aro-music watch           perbarui segmen saat status MPD berubah (dari aro-mpd)
 #   aro-music fill            antrean kosong -> isi dari folder aktif
@@ -22,11 +24,14 @@ music_dir() {
 mpd_ok() { command -v mpc >/dev/null && mpc -q status >/dev/null 2>&1; }
 
 text() {
-    if ! mpd_ok; then put folder "~♫ –"; put shuffle "~SHUFFLE –"; return; fi
+    if ! mpd_ok; then put folder "~♫ –"; put shuffle "~SHUFFLE –"; put repeat "~REPEAT –"; return; fi
     local f; f="$(active)"
     put folder "♫ ${f:-Semua}"
     if mpc 2>/dev/null | grep -q 'random: on'; then put shuffle "SHUFFLE ON"
     else put shuffle "~SHUFFLE OFF"; fi
+    local st; st="$(mpc 2>/dev/null)"
+    if grep -q 'single: on' <<<"$st" && grep -q 'repeat: on' <<<"$st"; then put repeat "REPEAT ON"
+    else put repeat "~REPEAT OFF"; fi
 }
 
 fill() {   # isi antrean dari folder aktif (folder hilang -> semua lagu)
@@ -66,6 +71,18 @@ shuffle_toggle() {
     text
 }
 
+repeat_toggle() {   # ulangi satu lagu: single + repeat; OFF: single mati (antrean tetap berulang)
+    mpd_ok || exit 1
+    if mpc | grep -q 'single: on'; then
+        mpc -q single off
+        notify-send -a Musik -t 1500 "Repeat" "OFF — lanjut ke lagu berikutnya" 2>/dev/null
+    else
+        mpc -q repeat on; mpc -q single on
+        notify-send -a Musik -t 1500 "Repeat" "ON — $(mpc -f '[%artist% — ]%title%|%file%' current)" 2>/dev/null
+    fi
+    text
+}
+
 watch() {
     exec 9>"$SEG/.aro-music.lock"; flock -n 9 || exit 0
     while true; do
@@ -78,6 +95,7 @@ watch() {
 case "${1:-text}" in
     folder-menu)    folder_menu ;;
     shuffle-toggle) shuffle_toggle ;;
+    repeat-toggle)  repeat_toggle ;;
     text)           text ;;
     watch)          watch ;;
     fill)           fill ;;

@@ -710,7 +710,7 @@ setup_public_home() {
     fi
     # bawah kiri setelah MIC/SPK: DAC (MUSIC_MPD), lalu media MPRIS
     if [ "$MUSIC_MPD" = "yes" ]; then
-        printf '\n# MPD + DAC (MUSIC_MPD): klik = DAC aktif, mode bit-perfect/bersama, Check…\nbar_segment = bottom left dac  aro-dac menu\nbar_segment = bottom left folder  aro-music folder-menu\nbar_segment = bottom left shuffle  aro-music shuffle-toggle\nexec = aro-mpd\n' >> "$AC"
+        printf '\n# MPD + DAC (MUSIC_MPD): klik = DAC aktif, mode bit-perfect/bersama, Check…\nbar_segment = bottom left dac  aro-dac menu\nbar_segment = bottom left folder  aro-music folder-menu\nbar_segment = bottom left shuffle  aro-music shuffle-toggle\nbar_segment = bottom left repeat  aro-music repeat-toggle\nexec = aro-mpd\n' >> "$AC"
     fi
     printf '\n# media MPRIS (MPD, Sung, Firefox, mpv): klik = play/pause\nbar_segment = bottom left media  aro-player play-pause\n' >> "$AC"
     if [ "$LIVEPAPER" = "yes" ]; then
