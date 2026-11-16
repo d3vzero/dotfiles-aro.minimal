@@ -149,7 +149,9 @@ up_proton() {
     # x86_64: utamakan *x86_64.tar.gz, kalau tidak ada ambil .tar.gz yang bukan aarch64
     url=$(printf '%s' "$rel" | jq -r '[.assets[].browser_download_url | select(endswith(".tar.gz"))]
           | (map(select(endswith("x86_64.tar.gz"))) + map(select(test("aarch64|arm64") | not)))[0] // empty')
-    sum=$(printf '%s' "$rel" | jq -r '.assets[].browser_download_url | select(endswith(".sha512sum"))' | head -n1)
+    # semua file .sha512sum di rilis (sejak GE-Proton11 ada x86_64 DAN aarch64,
+    # masing-masing punya file checksum sendiri)
+    sum=$(printf '%s' "$rel" | jq -r '.assets[].browser_download_url | select(endswith(".sha512sum"))')
     [ -n "$url" ] || { echo "!! file x86_64 tidak ditemukan di rilis $tag"; return 1; }
     tmp=$(mktemp -d -p /var/tmp)
     echo "unduh $tag (~500 MB)…"
@@ -157,12 +159,23 @@ up_proton() {
         rm -rf "$tmp"; echo "!! unduhan gagal"; return 1
     fi
     if [ -n "$sum" ]; then
-        # cocokkan hash file kita saja (file .sha512sum bisa memuat beberapa arsitektur)
-        if curl -fsSL -o "$tmp/sum" "$sum" &&
-           grep -qi "^$(sha512sum "$tmp/$(basename "$url")" | cut -d' ' -f1)" "$tmp/sum"; then
+        # hash file kita harus ada di salah satu file .sha512sum rilis itu
+        local h u n=0
+        h=$(sha512sum "$tmp/$(basename "$url")" | cut -d' ' -f1)
+        : > "$tmp/sums"
+        for u in $sum; do
+            curl -fsSL --max-time 30 "$u" >> "$tmp/sums" && n=$((n+1))
+        done
+        if [ "$n" -eq 0 ]; then
+            rm -rf "$tmp"; echo "!! file checksum tidak bisa diunduh -- dibatalkan"; return 1
+        elif grep -qi "$h" "$tmp/sums"; then
             echo "checksum sha512 cocok"
         else
-            rm -rf "$tmp"; echo "!! checksum tidak cocok -- dibatalkan"; return 1
+            echo "!! checksum tidak cocok -- dibatalkan"
+            echo "   file  : $(basename "$url") ($(stat -c %s "$tmp/$(basename "$url")") byte)"
+            echo "   sha512: ${h:0:16}…"
+            echo "   isi file checksum:"; sed 's/^/     /' "$tmp/sums" | cut -c1-110
+            rm -rf "$tmp"; return 1
         fi
     fi
     # ekstrak di /var/tmp dulu, baru pindahkan: folder setengah jadi tidak pernah muncul di Steam
