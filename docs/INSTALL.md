@@ -476,12 +476,12 @@ Tidak perlu `IgnorePkg` manual di `pacman.conf`.
 | ? | gagal cek (offline / batas API GitHub) |
 
 Item: Sistem (pacman), YouTube-Sung (yt-dlp), OnlyOffice, superfile,
-Sung, aro, Detectron2 (profil ai), dan *Cek-saja*. `Super+Ctrl+U` hanya mencakup Sistem, yt-dlp,
-OnlyOffice, superfile — **Sung, aro, dan Detectron2 sengaja manual** lewat `Super+U`
+Proton-GE (profil daily), Sung, aro, Detectron2 (profil ai), dan *Cek-saja*. `Super+Ctrl+U` hanya mencakup Sistem, yt-dlp,
+OnlyOffice, superfile, Proton-GE — **Sung, aro, dan Detectron2 sengaja manual** lewat `Super+U`
 karena dibuild dari commit terbaru upstream (di luar versi yang dikunci).
 
 Komponen: `/usr/local/bin/office-update` (menu), `/usr/local/sbin/office-update-root`
-(daftar putih: system | onlyoffice | superfile | aro | detectron2), dan
+(daftar putih: system | onlyoffice | superfile | aro | detectron2 | proton), dan
 `/etc/sudoers.d/office-update` (Admin boleh menjalankan helper itu tanpa
 sudo kedua; divalidasi `visudo` sebelum dipasang).
 
@@ -489,6 +489,12 @@ sudo kedua; divalidasi `visudo` sebelum dipasang).
 > (`ARO_REF`, `SUNG_REV`, `SPF_VERSION`). `update.sh` biasa tidak
 > menimpanya; `UPDATE_ARO=1` / `UPDATE_SUNG=1` mengembalikan ke versi
 > terkunci.
+
+**Proton-GE**: rilis terbaru GloriousEggroll (x86_64, dicek sha512) dipasang
+ke `/usr/share/steam/compatibilitytools.d/` **di samping** versi lama — game
+yang dikunci ke versi lama tetap jalan. Setelah update: tutup Steam total,
+buka lagi, lalu per game Properties → Compatibility → pilih GE-Proton terbaru.
+Versi lama dihapus manual (`sudo rm -rf …/GE-ProtonXX-YY`) kalau tidak dipakai.
 
 Di workstation AI, memilih **Sistem** saat ada job `train-run` atau
 proses compute GPU memunculkan peringatan + konfirmasi `[y/N]` (default

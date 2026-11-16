@@ -6,7 +6,7 @@
 #   office-update check                     tampilkan status di terminal
 #   office-update run <item>                jalankan update (dipakai di dalam kitty)
 #
-# item: system onlyoffice superfile aro ytdlp sung
+# item: system onlyoffice superfile aro ytdlp sung detectron2 proton
 # Bagian root dijalankan lewat /usr/local/sbin/office-update-root dengan
 # password Admin SATU kali (su Admin + sudo NOPASSWD khusus helper itu).
 # Dipasang dotfiles-aro.minimal ke /usr/local/bin (milik root).
@@ -23,9 +23,10 @@ SUNG_PY="$HOME/.local/lib/sung/runtime/bin/python"
 SELF=$(readlink -f "$0")
 mkdir -p "$STATE"
 
-ROOT_ITEMS="system onlyoffice superfile aro detectron2"
-ALL_ITEMS="system ytdlp onlyoffice superfile"      # yang ikut "update semua"
-MENU_ITEMS="system ytdlp onlyoffice superfile sung aro detectron2"
+ROOT_ITEMS="system onlyoffice superfile aro detectron2 proton"
+ALL_ITEMS="system ytdlp onlyoffice superfile proton"      # yang ikut "update semua"
+MENU_ITEMS="system ytdlp onlyoffice superfile proton sung aro detectron2"
+PROTON_DIR=/usr/share/steam/compatibilitytools.d
 D2_REPO=https://github.com/facebookresearch/detectron2.git
 
 label() {
@@ -37,6 +38,7 @@ label() {
         sung)       echo "Sung" ;;
         aro)        echo "aro" ;;
         detectron2) echo "Detectron2" ;;
+        proton)     echo "Proton-GE" ;;
     esac
 }
 desc() {
@@ -48,6 +50,7 @@ desc() {
         sung)       echo "build ulang dari GitHub (commit terbaru)" ;;
         aro)        echo "build ulang window manager, aktif setelah reboot" ;;
         detectron2) echo "venv AI versi terbaru; gagal -> venv lama kembali" ;;
+        proton)     echo "GE-Proton terbaru untuk Steam; versi lama tetap ada" ;;
     esac
 }
 
@@ -98,6 +101,12 @@ status() {
             latest=$(git_remote_head "$D2_REPO")
             [ -n "$latest" ] || { echo "ERR|gagal cek"; return; }
             [ "$cur" = "$latest" ] && echo "OK|$cur" || echo "NEED|${cur:-?} → $latest" ;;
+        proton)
+            cur=$(ls -1d "$PROTON_DIR"/GE-Proton* 2>/dev/null | xargs -rn1 basename | sort -V | tail -1)
+            [ -n "$cur" ] || { echo "SKIP|tidak terpasang (profil daily)"; return; }
+            latest=$(gh_latest GloriousEggroll/proton-ge-custom)
+            [ -n "$latest" ] || { echo "ERR|gagal cek"; return; }
+            { [ -d "$PROTON_DIR/$latest" ] || ls -d "$PROTON_DIR/$latest"-* >/dev/null 2>&1; } && echo "OK|$latest" || echo "NEED|$cur → $latest" ;;
         sung)
             [ -x "$HOME/.local/bin/sung" ] || { echo "SKIP|Sung tidak terpasang"; return; }
             cur=$(cut -c1-7 "$STATE/sung.rev" 2>/dev/null || echo "?")
@@ -141,13 +150,14 @@ cmd_menu() {
     done
     lines+="Cek-saja     tampilkan status lengkap di terminal"$'\n'
     rm -rf "$TMPST"
-    sel=$(printf '%s' "$lines" | fuzzel --dmenu --prompt 'Update: ' --width 90 --lines 8) || exit 0
+    sel=$(printf '%s' "$lines" | fuzzel --dmenu --prompt 'Update: ' --width 90 --lines 10) || exit 0
     key=${sel%% *}
     case $key in
         Cek-saja) exec kitty --class office-update --title "Update" "$SELF" check-hold ;;
         Sistem) open_terminal system ;;  YouTube-Sung) open_terminal ytdlp ;;
         OnlyOffice) open_terminal onlyoffice ;;  superfile) open_terminal superfile ;;
         Sung) open_terminal sung ;;  aro) open_terminal aro ;;
+        Proton-GE) open_terminal proton ;;  Detectron2) open_terminal detectron2 ;;
     esac
 }
 
@@ -166,14 +176,14 @@ cmd_all() {
     done
     lines+="──────────────────────────"$'\n'
     lines+="● = ada update, akan diupdate   ✓ = sudah terbaru"$'\n'
-    lines+="Tidak termasuk: Sung dan aro (manual lewat Super+U)"$'\n'
+    lines+="Tidak termasuk: Sung, aro, Detectron2 (manual lewat Super+U)"$'\n'
     lines+="Butuh password ${ADMIN_USER} satu kali"$'\n'
     rm -rf "$TMPST"
     if [ ${#need[@]} -eq 0 ]; then
-        printf '%s' "$lines" | fuzzel --dmenu --prompt 'Semua sudah terbaru ' --width 90 --lines 11 >/dev/null
+        printf '%s' "$lines" | fuzzel --dmenu --prompt 'Semua sudah terbaru ' --width 90 --lines 12 >/dev/null
         exit 0
     fi
-    sel=$(printf '%s' "$lines" | fuzzel --dmenu --prompt 'Update semua? ' --width 90 --lines 11) || exit 0
+    sel=$(printf '%s' "$lines" | fuzzel --dmenu --prompt 'Update semua? ' --width 90 --lines 12) || exit 0
     case $sel in "✔ Lanjutkan"*) open_terminal "${need[@]}" ;; esac
 }
 

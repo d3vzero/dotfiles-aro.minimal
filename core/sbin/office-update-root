@@ -1,7 +1,7 @@
 #!/bin/bash
 # /usr/local/sbin/office-update-root — bagian update yang butuh root
 # Dipanggil oleh office-update lewat: su Admin -c "sudo -n office-update-root <item...>"
-# Hanya menerima item dari daftar putih: system onlyoffice superfile aro detectron2
+# Hanya menerima item dari daftar putih: system onlyoffice superfile aro detectron2 proton
 # Pasang: install -o root -g root -m 755 office-update-root /usr/local/sbin/
 set -u
 [ "$(id -u)" = 0 ] || { echo "!! harus dijalankan sebagai root"; exit 1; }
@@ -135,6 +135,55 @@ up_detectron2() {
     return $ok
 }
 
+up_proton() {
+    # GE-Proton terbaru ke folder system-wide Steam. Versi lama TIDAK dihapus:
+    # game yang dikunci ke versi lama tetap jalan; pilih versi baru per game.
+    echo "==> Proton-GE"
+    local dest=/usr/share/steam/compatibilitytools.d rel tag url sum tmp
+    ls -d "$dest"/GE-Proton* >/dev/null 2>&1 || { echo "tidak terpasang (profil daily) -- skip"; return 0; }
+    rel=$(curl -fsS --max-time 15 https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest) \
+        || { echo "!! gagal cek rilis Proton-GE"; return 1; }
+    tag=$(printf '%s' "$rel" | jq -r .tag_name)
+    [ -n "$tag" ] && [ "$tag" != null ] || { echo "!! tag rilis tidak terbaca"; return 1; }
+    if [ -d "$dest/$tag" ] || ls -d "$dest/$tag"-* >/dev/null 2>&1; then echo "sudah terbaru ($tag)"; return 0; fi
+    # x86_64: utamakan *x86_64.tar.gz, kalau tidak ada ambil .tar.gz yang bukan aarch64
+    url=$(printf '%s' "$rel" | jq -r '[.assets[].browser_download_url | select(endswith(".tar.gz"))]
+          | (map(select(endswith("x86_64.tar.gz"))) + map(select(test("aarch64|arm64") | not)))[0] // empty')
+    sum=$(printf '%s' "$rel" | jq -r '.assets[].browser_download_url | select(endswith(".sha512sum"))' | head -n1)
+    [ -n "$url" ] || { echo "!! file x86_64 tidak ditemukan di rilis $tag"; return 1; }
+    tmp=$(mktemp -d -p /var/tmp)
+    echo "unduh $tag (~500 MB)…"
+    if ! curl -fL --progress-bar -o "$tmp/$(basename "$url")" "$url"; then
+        rm -rf "$tmp"; echo "!! unduhan gagal"; return 1
+    fi
+    if [ -n "$sum" ]; then
+        # cocokkan hash file kita saja (file .sha512sum bisa memuat beberapa arsitektur)
+        if curl -fsSL -o "$tmp/sum" "$sum" &&
+           grep -qi "^$(sha512sum "$tmp/$(basename "$url")" | cut -d' ' -f1)" "$tmp/sum"; then
+            echo "checksum sha512 cocok"
+        else
+            rm -rf "$tmp"; echo "!! checksum tidak cocok -- dibatalkan"; return 1
+        fi
+    fi
+    # ekstrak di /var/tmp dulu, baru pindahkan: folder setengah jadi tidak pernah muncul di Steam
+    mkdir -p "$tmp/x"
+    local top
+    if tar -xzf "$tmp/$(basename "$url")" -C "$tmp/x" &&
+       top=$(ls -1 "$tmp/x") && [ "$(printf '%s\n' "$top" | wc -l)" = 1 ] &&
+       [ -f "$tmp/x/$top/compatibilitytool.vdf" ] && [ ! -e "$dest/$top" ]; then
+        mv "$tmp/x/$top" "$dest/$top"
+        tag=$top
+    else
+        rm -rf "$tmp"; echo "!! ekstrak gagal"; return 1
+    fi
+    rm -rf "$tmp"
+    echo "Proton-GE $tag terpasang. Terpasang sekarang:"
+    du -sh "$dest"/GE-Proton* 2>/dev/null | sed 's#'"$dest"'/#   #'
+    echo ">> Tutup Steam total lalu buka lagi. Per game: Properties → Compatibility →"
+    echo "   centang 'Force…' → pilih $tag. Versi lama bisa dihapus manual kalau tidak dipakai:"
+    echo "   sudo rm -rf $dest/GE-ProtonXX-YY"
+}
+
 rc=0
 for item in "$@"; do
     echo
@@ -144,6 +193,7 @@ for item in "$@"; do
         superfile)  up_superfile  || rc=1 ;;
         aro)        up_aro        || rc=1 ;;
         detectron2) up_detectron2 || rc=1 ;;
+        proton)     up_proton     || rc=1 ;;
         *) echo "!! item tidak dikenal: $item (diabaikan)"; rc=1 ;;
     esac
 done

@@ -13,7 +13,8 @@ install_proton_ge() {
     fi
     # Filter eksplisit x86_64: sejak GE-Proton11 ada juga tarball aarch64
     url="$(curl -fsSL https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest \
-          | jq -r '.assets[].browser_download_url | select(endswith("x86_64.tar.gz"))' | head -n1)"
+          | jq -r '[.assets[].browser_download_url | select(endswith(".tar.gz"))]
+              | (map(select(endswith("x86_64.tar.gz"))) + map(select(test("aarch64|arm64") | not)))[0] // empty')"
     if [ -z "$url" ]; then echo "!! URL Proton-GE tidak ditemukan"; return 1; fi
     tmp="$(mktemp -d)"
     curl -fL -o "$tmp/ge.tar.gz" "$url"
