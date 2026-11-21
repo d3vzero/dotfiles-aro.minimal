@@ -47,12 +47,17 @@ folder_menu() {
     local dir cur pick
     dir="$(music_dir)"; [ -d "$dir" ] || { notify-send -a Musik "Perpustakaan tidak ditemukan" "$dir"; exit 1; }
     cur="$(active)"
-    pick="$( { [ -z "$cur" ] && echo "● Semua lagu" || echo "  Semua lagu"
+    local list n lines
+    list="$( { [ -z "$cur" ] && echo "● Semua lagu" || echo "  Semua lagu"
               (cd "$dir" && find -L . -mindepth 1 -type d ! -name '.*' -printf '%P\n' | sort) |
               while IFS= read -r d; do
                   [ "$d" = "$cur" ] && echo "● $d" || echo "  $d"
-              done; } |
-            fuzzel --dmenu --prompt 'Folder musik ❯ ' --lines 15 --width 60)" || exit 0
+              done; } )"
+    # tinggi menu ikut jumlah folder (maks 30 baris; sisanya digulir / diketik untuk menyaring)
+    n=$(printf '%s\n' "$list" | grep -c .)
+    lines=$(( n < 30 ? n : 30 ))
+    pick="$(printf '%s\n' "$list" |
+            fuzzel --dmenu --prompt "Folder musik ($((n-1))) ❯ " --lines "$lines" --width 70)" || exit 0
     pick="${pick:2}"
     [ "$pick" = "Semua lagu" ] && pick=""
     printf '%s' "$pick" > "$FOLDER_FILE"
