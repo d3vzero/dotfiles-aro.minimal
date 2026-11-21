@@ -12,6 +12,7 @@ pipewire
 pipewire-pulse
 pipewire-jack
 wireplumber
+alsa-utils
 
 # sesi wayland
 xorg-xwayland

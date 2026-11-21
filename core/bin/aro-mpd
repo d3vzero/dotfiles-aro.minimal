@@ -74,6 +74,24 @@ start() {
     setsid -f aro-music watch >/dev/null 2>&1
 }
 
+# hentikan mpd milik akun ini dan TUNGGU sampai benar-benar keluar; kalau tidak,
+# start() melihat mpd lama masih hidup dan tidak menjalankan yang baru, sehingga
+# config DAC baru tidak pernah terbaca (gejala: "hw:CARD=<DAC lama>: No such device")
+stop() {
+    local pid i
+    mpd --kill "$CFG/mpd.conf" 2>/dev/null
+    for i in $(seq 1 20); do
+        pgrep -u "$(id -u)" -x mpd >/dev/null || return 0
+        sleep 0.25
+    done
+    for pid in $(pgrep -u "$(id -u)" -x mpd); do kill "$pid" 2>/dev/null; done
+    for i in $(seq 1 20); do
+        pgrep -u "$(id -u)" -x mpd >/dev/null || return 0
+        sleep 0.25
+    done
+    echo "aro-mpd: mpd tidak mau berhenti" >&2; return 1
+}
+
 # antrean = seluruh perpustakaan (setelah scan selesai), hanya kalau antrean kosong
 queue() {
     mpc -q update --wait 2>/dev/null
@@ -85,6 +103,6 @@ case "${1:-run}" in
     run)     config; start ;;
     queue)   queue ;;
     config)  config ;;
-    restart) config; mpd --kill "$CFG/mpd.conf" 2>/dev/null; sleep 1; start ;;
+    restart) config; stop; start ;;
     *) sed -n '2,8p' "$0"; exit 2 ;;
 esac

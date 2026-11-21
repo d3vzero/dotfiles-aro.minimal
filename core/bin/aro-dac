@@ -55,6 +55,9 @@ set_mode() {
             [ "${prof:-0}" != 0 ] && PROFILE="$prof"
             wpctl set-profile "$id" 0 2>/dev/null        # profil 0 = off: kartu dilepas PipeWire
             sleep 0.5
+            read -r id prof <<<"$(pw_dev)"
+            [ "${prof:-0}" = 0 ] ||
+                notify -u critical "DAC ${NAME:-$CARD}: masih dipakai PipeWire" "profil off gagal (profil $prof) -- MPD mungkin tidak bisa membuka DAC"
         fi
         MODE=bitperfect; save; mpd_out dac
         notify "DAC ${NAME:-$CARD}: bit-perfect" "MPD langsung ke hw:CARD=$CARD; aplikasi lain lewat output lain"
